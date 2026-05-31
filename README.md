@@ -37,7 +37,9 @@ mvn spring-boot:run
 | `DB_PASSWORD` | пароль Neon |
 | `HH_REDIRECT_URI` | `https://твой-сервис.onrender.com/hh/callback` |
 
-5. После деплоя проверь: `https://твой-сервис.onrender.com/hh/health` → `ok`.
+5. После деплоя проверь: `https://твой-сервис.onrender.com/health` → `ok`.
+
+**Важно:** в Environment на Render **удали** переменные `SPRING_JPA_PROPERTIES_HIBERNATE` или `HIBERNATE_*` со значением `disabled` / `{}` — они ломают старт.
 6. Напиши боту в Telegram: `/start`.
 
 ### Neon → JDBC

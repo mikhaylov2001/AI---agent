@@ -13,6 +13,8 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.Map;
 
@@ -40,9 +42,10 @@ public class HhOAuthService {
         if (!StringUtils.hasText(clientId)) {
             return "HH_CLIENT_ID не настроен. Зарегистрируй приложение на dev.hh.ru.";
         }
+        String encodedRedirect = URLEncoder.encode(redirectUri, StandardCharsets.UTF_8);
         return String.format(
                 "https://hh.ru/oauth/authorize?response_type=code&client_id=%s&redirect_uri=%s&state=%d",
-                clientId, redirectUri, telegramId);
+                clientId, encodedRedirect, telegramId);
     }
 
     @Transactional

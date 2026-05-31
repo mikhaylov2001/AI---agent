@@ -4,6 +4,8 @@ server:
 spring:
   application:
     name: niki-bot
+  main:
+    banner-mode: off
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/nikidb}
     username: ${DB_USERNAME:postgres}
@@ -12,6 +14,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+    open-in-view: false
     show-sql: false
 
 telegram:

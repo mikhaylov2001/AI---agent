@@ -13,8 +13,9 @@ public class OpenAiConfig {
 
     @Bean
     public WebClient openAiWebClient(@Value("${openai.api.key:}") String apiKey) {
+        String baseUrl = apiUrl.replaceAll("/chat/completions/?$", "");
         return WebClient.builder()
-                .baseUrl(apiUrl)
+                .baseUrl(baseUrl)
                 .defaultHeader("Authorization", "Bearer " + apiKey)
                 .defaultHeader("Content-Type", "application/json")
                 .codecs(c -> c.defaultCodecs().maxInMemorySize(16 * 1024 * 1024))

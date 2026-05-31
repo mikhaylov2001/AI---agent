@@ -122,6 +122,7 @@ public class OpenAiService {
                     "temperature", 0.7
             );
             Map<String, Object> response = openAiWebClient.post()
+                    .uri("/chat/completions")
                     .bodyValue(body)
                     .retrieve()
                     .bodyToMono(Map.class)
@@ -181,6 +182,7 @@ public class OpenAiService {
                     "max_tokens", 300, "temperature", 0.3
             );
             Map<String, Object> response = openAiWebClient.post()
+                    .uri("/chat/completions")
                     .bodyValue(body).retrieve().bodyToMono(Map.class).block();
             if (response == null) {
                 return;

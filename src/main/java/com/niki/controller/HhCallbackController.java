@@ -33,8 +33,4 @@ public class HhCallbackController {
         }
     }
 
-    @GetMapping("/health")
-    public String health() {
-        return "ok";
-    }
 }
