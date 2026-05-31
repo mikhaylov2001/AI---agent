@@ -76,18 +76,44 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
                 return;
             }
             var message = update.getMessage();
+            log.info("Сообщение от {}: {}", message.getFrom().getId(), message.getText());
             sendResponse(message.getChatId(), commandHandler.handle(message));
         } catch (Exception e) {
             log.error("Ошибка обработки update: {}", e.getMessage(), e);
-            if (update.hasMessage()) {
-                sendMessage(update.getMessage().getChatId(),
-                        "Что-то пошло не так 😅 Нажми /start или кнопку «❓ Помощь».");
+            Long chatId = resolveChatId(update);
+            if (chatId != null) {
+                sendPlain(chatId, "Что-то пошло не так. Нажми /start");
             }
+        }
+    }
+
+    private Long resolveChatId(Update update) {
+        if (update.hasMessage()) {
+            return update.getMessage().getChatId();
+        }
+        if (update.hasCallbackQuery() && update.getCallbackQuery().getMessage() != null) {
+            return update.getCallbackQuery().getMessage().getChatId();
+        }
+        return null;
+    }
+
+    private void sendPlain(Long chatId, String text) {
+        try {
+            execute(SendMessage.builder()
+                    .chatId(chatId.toString())
+                    .text(text)
+                    .replyMarkup(TelegramKeyboards.mainMenu())
+                    .build());
+        } catch (TelegramApiException e) {
+            log.error("Не удалось отправить сообщение: {}", e.getMessage());
         }
     }
 
     private void handleCallback(Update update) throws TelegramApiException {
         var callback = update.getCallbackQuery();
+        if (callback.getMessage() == null) {
+            return;
+        }
         Long chatId = callback.getMessage().getChatId();
         execute(AnswerCallbackQuery.builder()
                 .callbackQueryId(callback.getId())
@@ -98,24 +124,16 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
 
     private void sendResponse(Long chatId, BotResponse response) {
         try {
-            execute(buildMessage(chatId, response, true));
+            execute(buildMessage(chatId, response, false));
         } catch (TelegramApiException e) {
-            log.warn("Markdown send failed, retry plain: {}", e.getMessage());
-            try {
-                execute(buildMessage(chatId, response, false));
-            } catch (TelegramApiException ex) {
-                log.error("Ошибка отправки в {}: {}", chatId, ex.getMessage());
-            }
+            log.error("Ошибка отправки в {}: {}", chatId, e.getMessage());
         }
     }
 
     private SendMessage buildMessage(Long chatId, BotResponse response, boolean markdown) {
         SendMessage.SendMessageBuilder builder = SendMessage.builder()
                 .chatId(chatId.toString())
-                .text(response.text());
-        if (markdown) {
-            builder.parseMode("Markdown");
-        }
+                .text(stripMarkdown(response.text()));
         if (response.disableWebPreview()) {
             builder.disableWebPagePreview(true);
         }
@@ -125,6 +143,14 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
             builder.replyMarkup(response.replyKeyboard());
         }
         return builder.build();
+    }
+
+    /** Убираем * и _ чтобы Telegram не отклонял сообщение без parseMode. */
+    private static String stripMarkdown(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replace("*", "").replace("_", "");
     }
 
     @Override

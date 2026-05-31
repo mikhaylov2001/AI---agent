@@ -38,8 +38,12 @@ mvn spring-boot:run
 | `HH_REDIRECT_URI` | `https://твой-сервис.onrender.com/hh/callback` |
 
 5. После деплоя проверь: `https://твой-сервис.onrender.com/health` → `ok`.
+6. Добавь (если webhook не ставится сам): `TELEGRAM_WEBHOOK_BASE_URL=https://твой-сервис.onrender.com`
+7. В логах Render должно быть: `Telegram WEBHOOK: https://.../telegram/webhook`
 
 **Важно:** в Environment на Render **удали** переменные `SPRING_JPA_PROPERTIES_HIBERNATE` или `HIBERNATE_*` со значением `disabled` / `{}` — они ломают старт.
+
+Бот на Render работает через **webhook** (не long polling) — так надёжнее на бесплатном тарифе.
 6. Напиши боту в Telegram: `/start`.
 
 ### Neon → JDBC
