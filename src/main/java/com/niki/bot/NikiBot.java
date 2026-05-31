@@ -8,9 +8,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
+import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
+import org.telegram.telegrambots.meta.api.methods.commands.SetMyCommands;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
+import org.telegram.telegrambots.meta.api.objects.commands.BotCommand;
+import org.telegram.telegrambots.meta.api.objects.commands.scope.BotCommandScopeDefault;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
+
+import java.util.List;
 
 @Component
 @Slf4j
@@ -33,7 +39,25 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
     @PostConstruct
     public void init() {
         reminderService.setMessageSender(this);
+        registerBotCommands();
         log.info("Ники запущен! @{}", botUsername);
+    }
+
+    private void registerBotCommands() {
+        try {
+            execute(new SetMyCommands(List.of(
+                    new BotCommand("start", "Начать / меню"),
+                    new BotCommand("goals", "Мои цели"),
+                    new BotCommand("addgoal", "Добавить цель"),
+                    new BotCommand("jobs", "Найти вакансии"),
+                    new BotCommand("connect_hh", "Подключить HH.ru"),
+                    new BotCommand("hh_resumes", "Мои резюме"),
+                    new BotCommand("apply", "Отклик на вакансию"),
+                    new BotCommand("help", "Помощь")
+            ), new BotCommandScopeDefault(), null));
+        } catch (TelegramApiException e) {
+            log.warn("Не удалось зарегистрировать команды меню: {}", e.getMessage());
+        }
     }
 
     @Override
@@ -43,38 +67,68 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
 
     @Override
     public void onUpdateReceived(Update update) {
-        if (!update.hasMessage() || !update.getMessage().hasText()) {
-            return;
-        }
-        var message = update.getMessage();
         try {
-            sendMessage(message.getChatId(), commandHandler.handle(message));
+            if (update.hasCallbackQuery()) {
+                handleCallback(update);
+                return;
+            }
+            if (!update.hasMessage() || !update.getMessage().hasText()) {
+                return;
+            }
+            var message = update.getMessage();
+            sendResponse(message.getChatId(), commandHandler.handle(message));
         } catch (Exception e) {
-            log.error("Ошибка: {}", e.getMessage(), e);
-            sendMessage(message.getChatId(), "Что-то пошло не так 😅 Попробуй ещё раз.");
+            log.error("Ошибка обработки update: {}", e.getMessage(), e);
+            if (update.hasMessage()) {
+                sendMessage(update.getMessage().getChatId(),
+                        "Что-то пошло не так 😅 Нажми /start или кнопку «❓ Помощь».");
+            }
         }
+    }
+
+    private void handleCallback(Update update) throws TelegramApiException {
+        var callback = update.getCallbackQuery();
+        Long chatId = callback.getMessage().getChatId();
+        execute(AnswerCallbackQuery.builder()
+                .callbackQueryId(callback.getId())
+                .build());
+        BotResponse response = commandHandler.handleCallback(callback.getFrom().getId(), callback.getData());
+        sendResponse(chatId, response);
+    }
+
+    private void sendResponse(Long chatId, BotResponse response) {
+        try {
+            execute(buildMessage(chatId, response, true));
+        } catch (TelegramApiException e) {
+            log.warn("Markdown send failed, retry plain: {}", e.getMessage());
+            try {
+                execute(buildMessage(chatId, response, false));
+            } catch (TelegramApiException ex) {
+                log.error("Ошибка отправки в {}: {}", chatId, ex.getMessage());
+            }
+        }
+    }
+
+    private SendMessage buildMessage(Long chatId, BotResponse response, boolean markdown) {
+        SendMessage.SendMessageBuilder builder = SendMessage.builder()
+                .chatId(chatId.toString())
+                .text(response.text());
+        if (markdown) {
+            builder.parseMode("Markdown");
+        }
+        if (response.disableWebPreview()) {
+            builder.disableWebPagePreview(true);
+        }
+        if (response.inlineKeyboard() != null) {
+            builder.replyMarkup(response.inlineKeyboard());
+        } else if (response.replyKeyboard() != null) {
+            builder.replyMarkup(response.replyKeyboard());
+        }
+        return builder.build();
     }
 
     @Override
     public void sendMessage(Long chatId, String text) {
-        try {
-            execute(SendMessage.builder()
-                    .chatId(chatId.toString())
-                    .text(text)
-                    .parseMode("Markdown")
-                    .disableWebPagePreview(true)
-                    .build());
-        } catch (TelegramApiException e) {
-            log.error("Ошибка отправки в {}: {}", chatId, e.getMessage());
-            try {
-                execute(SendMessage.builder()
-                        .chatId(chatId.toString())
-                        .text(text)
-                        .disableWebPagePreview(true)
-                        .build());
-            } catch (TelegramApiException ex) {
-                log.error("Повторная ошибка отправки: {}", ex.getMessage());
-            }
-        }
+        sendResponse(chatId, BotResponse.withMainMenu(text));
     }
 }

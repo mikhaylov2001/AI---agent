@@ -12,7 +12,7 @@
 
     <groupId>com.niki</groupId>
     <artifactId>niki-bot</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
     <name>Niki Bot</name>
 
     <properties>
