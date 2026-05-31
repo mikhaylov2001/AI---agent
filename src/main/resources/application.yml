@@ -21,10 +21,6 @@ telegram:
   bot:
     token: ${TELEGRAM_BOT_TOKEN}
     username: ${TELEGRAM_BOT_USERNAME}
-  webhook:
-    # Render: RENDER_EXTERNAL_URL. Или вручную TELEGRAM_WEBHOOK_BASE_URL=https://ai-agent-fgo1.onrender.com
-    base-url: ${TELEGRAM_WEBHOOK_BASE_URL:${RENDER_EXTERNAL_URL:}}
-    path: /telegram/webhook
 
 openai:
   api:
@@ -47,4 +43,4 @@ niki:
 logging:
   level:
     com.niki: INFO
-    org.telegram: WARN
+    org.telegram: INFO
