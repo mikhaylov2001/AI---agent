@@ -1,0 +1,26 @@
+# Blueprint для Render: New → Blueprint → подключить репозиторий
+services:
+  - type: web
+    name: niki-bot
+    runtime: docker
+    plan: free
+    healthCheckPath: /hh/health
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_USERNAME
+        value: NikiMindBot
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: DB_URL
+        sync: false
+      - key: DB_USERNAME
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: HH_CLIENT_ID
+        sync: false
+      - key: HH_CLIENT_SECRET
+        sync: false
+      - key: HH_REDIRECT_URI
+        sync: false
