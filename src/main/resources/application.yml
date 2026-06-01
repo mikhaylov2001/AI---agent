@@ -18,9 +18,15 @@ spring:
     show-sql: false
 
 telegram:
+  # webhook — для Render (будит сервис при каждом сообщении)
+  # polling — только локально: TELEGRAM_DELIVERY_MODE=polling
+  delivery-mode: ${TELEGRAM_DELIVERY_MODE:webhook}
   bot:
     token: ${TELEGRAM_BOT_TOKEN}
     username: ${TELEGRAM_BOT_USERNAME}
+  webhook:
+    public-url: ${TELEGRAM_WEBHOOK_URL:https://ai-agent-fgo1.onrender.com}
+    path: /telegram/webhook
 
 openai:
   api:
