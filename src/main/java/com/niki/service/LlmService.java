@@ -5,6 +5,7 @@ import com.niki.model.Goal;
 import com.niki.model.User;
 import com.niki.repository.ChatMessageRepository;
 import com.niki.repository.UserRepository;
+import com.niki.util.MentorResponseFormatter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -56,7 +57,7 @@ public class LlmService {
                 Map.of("role", "system", "content", buildSystemPrompt(user, goals, ChatIntent.NEXT_STEP)),
                 Map.of("role", "user", "content", "[АВТОПИЛОТ] " + task + "\n\nОтвет: макс. 5 строк, сразу ▶️ Шаг, без воды.")
         );
-        return callLlm(messages, proactiveMaxTokens, 0.3);
+        return MentorResponseFormatter.format(callLlm(messages, proactiveMaxTokens, 0.3), ChatIntent.NEXT_STEP);
     }
 
     @Transactional
@@ -77,7 +78,7 @@ public class LlmService {
         saveMessage(user, "user", effectiveText);
         List<Map<String, String>> messages = buildMessages(user, effectiveText, goals, intent);
         int tokens = tokensForIntent(intent);
-        String reply = callLlm(messages, tokens, temperature);
+        String reply = MentorResponseFormatter.format(callLlm(messages, tokens, temperature), intent);
         saveMessage(user, "assistant", reply);
         trimHistory(user.getTelegramId());
         updateMemorySummaryIfNeeded(user);
@@ -126,11 +127,11 @@ public class LlmService {
         p.append("Провайдер ИИ: ").append(provider).append(" (").append(model).append(").\n");
         p.append("""
                 
-                ЖЁСТКИЕ ЛИМИТЫ (нарушать нельзя):
-                - Обычный ответ: ≤ 600 символов, 4 блока максимум
-                - Каждый блок — 1–2 короткие строки
-                - Нет блока = не пиши заголовок
-                - Telegram: без ссылок [1], без footnotes, без markdown-таблиц
+                ЖЁСТКИЕ ЛИМИТЫ:
+                - ≤ 500 символов, макс. 4 блока
+                - Между блоками — пустая строка
+                - Заголовок: эмодзи + *Название* + перенос + текст
+                - Telegram: без [1], footnotes, таблиц
                 """);
 
         if (StringUtils.hasText(user.getMentorProfile())) {
@@ -152,15 +153,15 @@ public class LlmService {
         }
 
         if (intent == ChatIntent.NEXT_STEP) {
-            p.append("\nРЕЖИМ СЛЕДУЮЩИЙ ШАГ: только ▶️ Шаг, 1–2 строки. Без 📍 и ⚠️.\n");
+            p.append("\nРЕЖИМ: только блок ▶️ *Сейчас*, формат «N мин · задача · результат».\n");
         } else if (intent == ChatIntent.CHECK_IN) {
-            p.append("\nРЕЖИМ ЧЕК-ИН: «Энергия 1–10? Что мешает?» + ▶️ один шаг. Макс. 4 строки.\n");
+            p.append("\nРЕЖИМ: 📊 *Чек-ин* (энергия 1–10?) + ▶️ *Сейчас*. Макс. 5 строк.\n");
         } else if (intent == ChatIntent.LEARNING) {
-            p.append("\nРЕЖИМ УЧЁБА: ▶️ шаг + 1 пример. Без теории на полстраницы.\n");
+            p.append("\nРЕЖИМ: ▶️ *Сейчас* + ✅ *Проверка* (один вопрос).\n");
         } else if (intent == ChatIntent.INTERVIEW) {
-            p.append("\nРЕЖИМ СОБЕС: ровно 3 вопроса (нумерованный список) + ▶️ как готовить ответ. Макс. 8 строк.\n");
+            p.append("\nРЕЖИМ: 3 нумерованных вопроса + ▶️ *Сейчас* (как готовить ответ).\n");
         } else if (intent == ChatIntent.MEMORY) {
-            p.append("\nРЕЖИМ ПАМЯТЬ: список фактов буллетами, макс. 6 пунктов, без советов.\n");
+            p.append("\nРЕЖИМ: 💡 *Запомнил* — буллеты, макс. 6 пунктов.\n");
         }
 
         return p.toString();

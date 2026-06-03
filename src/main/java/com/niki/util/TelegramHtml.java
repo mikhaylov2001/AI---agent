@@ -14,15 +14,27 @@ public final class TelegramHtml {
                 .replace(">", "&gt;");
     }
 
-    /** Конвертирует *bold* и _italic_ в HTML для Telegram. */
+    /** Конвертирует *bold* и _italic_ в HTML; сохраняет переносы строк. */
     public static String markdownToHtml(String text) {
         if (text == null) {
             return "";
         }
-        String escaped = escape(text);
-        escaped = escaped.replaceAll("\\*([^*\\n]+)\\*", "<b>$1</b>");
-        escaped = escaped.replaceAll("_([^_\\n]+)_", "<i>$1</i>");
-        escaped = escaped.replaceAll("`([^`\\n]+)`", "<code>$1</code>");
+        String[] lines = text.split("\n", -1);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < lines.length; i++) {
+            if (i > 0) {
+                sb.append("\n");
+            }
+            sb.append(formatLine(lines[i]));
+        }
+        return sb.toString();
+    }
+
+    private static String formatLine(String line) {
+        String escaped = escape(line);
+        escaped = escaped.replaceAll("\\*([^*]+)\\*", "<b>$1</b>");
+        escaped = escaped.replaceAll("_([^_]+)_", "<i>$1</i>");
+        escaped = escaped.replaceAll("`([^`]+)`", "<code>$1</code>");
         return escaped;
     }
 

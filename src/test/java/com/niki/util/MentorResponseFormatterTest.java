@@ -1,0 +1,31 @@
+package com.niki.util;
+
+import com.niki.service.ChatIntent;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+class MentorResponseFormatterTest {
+
+    @Test
+    void stripsFluffAndFormatsBlocks() {
+        String raw = """
+                Отличный вопрос! Вот что я думаю:
+                
+                📍 *Вижу:* хочешь Spring
+                ▶️ *Шаг:* 20 мин почитать docs
+                """;
+        String out = MentorResponseFormatter.format(raw, ChatIntent.DEFAULT);
+        assertFalse(out.toLowerCase().contains("отличный"), "out was: " + out);
+        assertTrue(out.contains("📍 *Контекст*"), "out was: " + out);
+        assertTrue(out.contains("▶️ *Сейчас*"), "out was: " + out);
+    }
+
+    @Test
+    void nextStepOnlyShowsAction() {
+        String raw = "📍 Контекст: blah\n▶️ Сейчас: 15 мин · LeetCode easy";
+        String out = MentorResponseFormatter.format(raw, ChatIntent.NEXT_STEP);
+        assertTrue(out.startsWith("▶️ *Сейчас*"));
+        assertFalse(out.contains("Контекст"));
+    }
+}

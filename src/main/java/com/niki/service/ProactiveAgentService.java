@@ -46,7 +46,7 @@ public class ProactiveAgentService {
                     : "главная цель: " + goals.get(0).getTitle();
             String text = llmService.proactiveBrief(user, goals,
                     "Коротко. " + goalsHint + ". Один шаг на сегодня.");
-            send(user.getTelegramId(), "☀️ *Доброе утро!*\n\n" + text);
+            send(user.getTelegramId(), "☀️ *Утро*\n\n" + text);
         });
     }
 
@@ -55,7 +55,7 @@ public class ProactiveAgentService {
         runForProactiveUsers(user -> {
             String text = llmService.proactiveBrief(user, goalService.getActiveGoals(user.getTelegramId()),
                     "Чек-ин: спроси энергию 1-10, один шаг до вечера.");
-            send(user.getTelegramId(), "📊 *Чек-ин дня*\n\n" + text);
+            send(user.getTelegramId(), "📊 *Чек-ин*\n\n" + text);
         });
     }
 
