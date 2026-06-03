@@ -47,15 +47,13 @@ public class User {
     @Column(name = "hh_resume_id")
     private String hhResumeId;
 
-    /** Проактивные сообщения (утро/день/вечер) без запроса пользователя */
     @Column(name = "proactive_enabled")
     @Builder.Default
-    private Boolean proactiveEnabled = true;
+    private Boolean proactiveEnabled = false;
 
-    /** Алерты новых вакансий HH */
     @Column(name = "job_alerts_enabled")
     @Builder.Default
-    private Boolean jobAlertsEnabled = true;
+    private Boolean jobAlertsEnabled = false;
 
     @Column(name = "job_search_query")
     @Builder.Default
@@ -66,6 +64,32 @@ public class User {
 
     @Column(name = "last_notified_vacancies", columnDefinition = "TEXT")
     private String lastNotifiedVacancies;
+
+    @Column(name = "hh_search_area")
+    private String hhSearchArea;
+
+    @Column(name = "search_experience")
+    private String searchExperience;
+
+    @Column(name = "search_remote")
+    @Builder.Default
+    private Boolean searchRemote = false;
+
+    @Column(name = "onboarding_done")
+    @Builder.Default
+    private Boolean onboardingDone = false;
+
+    @Column(name = "session_state")
+    private String sessionState;
+
+    @Column(name = "session_payload")
+    private String sessionPayload;
+
+    @Column(name = "last_cover_letter", columnDefinition = "TEXT")
+    private String lastCoverLetter;
+
+    @Column(name = "last_cover_vacancy_id")
+    private String lastCoverVacancyId;
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;

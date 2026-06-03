@@ -5,5 +5,6 @@ public enum ChatIntent {
     CHECK_IN,
     NEXT_STEP,
     LEARNING,
-    MEMORY
+    MEMORY,
+    INTERVIEW
 }

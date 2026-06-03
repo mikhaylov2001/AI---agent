@@ -16,18 +16,20 @@ spring:
       ddl-auto: update
     open-in-view: false
     show-sql: false
+  flyway:
+    enabled: false
+    baseline-on-migrate: true
+    baseline-version: 1
 
 telegram:
-  # webhook — для Render (будит сервис при каждом сообщении)
-  # polling — локально: TELEGRAM_DELIVERY_MODE=polling
   delivery-mode: ${TELEGRAM_DELIVERY_MODE:webhook}
   bot:
     token: ${TELEGRAM_BOT_TOKEN:}
     username: ${TELEGRAM_BOT_USERNAME:NikiMindBot}
   webhook:
-    # Render подставляет RENDER_EXTERNAL_URL; иначе TELEGRAM_WEBHOOK_URL
     public-url: ${TELEGRAM_WEBHOOK_URL:${RENDER_EXTERNAL_URL:}}
     path: /telegram/webhook
+    secret-token: ${TELEGRAM_WEBHOOK_SECRET:}
 
 llm:
   provider: ${LLM_PROVIDER:groq}
@@ -43,16 +45,17 @@ hh:
     secret: ${HH_CLIENT_SECRET:}
   redirect:
     uri: ${HH_REDIRECT_URI:http://localhost:8080/hh/callback}
-  user-agent: ${HH_USER_AGENT:NikiBot/1.5 (babaykin35@gmail.com)}
+  user-agent: ${HH_USER_AGENT:NikiBot/2.0 (babaykin35@gmail.com)}
   default-area: ${HH_DEFAULT_AREA:}
   search-per-page: ${HH_SEARCH_PER_PAGE:8}
 
 niki:
-  # MSK = UTC+3 (Render работает в UTC)
-  morning-cron: "0 0 6 * * *"    # 09:00 MSK
-  midday-cron: "0 0 11 * * *"    # 14:00 MSK
-  evening-cron: "0 0 18 * * *"   # 21:00 MSK
-  job-alert-cron: "0 0 7,15 * * *"  # 10:00 и 18:00 MSK
+  cron-secret: ${NIKI_CRON_SECRET:}
+  state-secret: ${NIKI_STATE_SECRET:${HH_CLIENT_SECRET:}}
+  morning-cron: "0 0 6 * * *"
+  midday-cron: "0 0 11 * * *"
+  evening-cron: "0 0 18 * * *"
+  job-alert-cron: "0 0 7,15 * * *"
 
 logging:
   level:

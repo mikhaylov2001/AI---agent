@@ -36,6 +36,15 @@ public class GoalService {
     }
 
     @Transactional
+    public Goal updateProgressByIndex(Long telegramId, int oneBasedIndex, int progress) {
+        List<Goal> goals = getActiveGoals(telegramId);
+        if (oneBasedIndex < 1 || oneBasedIndex > goals.size()) {
+            throw new IllegalArgumentException("Цель #" + oneBasedIndex + " не найдена");
+        }
+        return updateProgress(goals.get(oneBasedIndex - 1).getId(), progress);
+    }
+
+    @Transactional
     public Goal updateProgress(Long goalId, int progress) {
         Goal goal = goalRepository.findById(goalId)
                 .orElseThrow(() -> new RuntimeException("Цель не найдена: " + goalId));
@@ -60,6 +69,10 @@ public class GoalService {
                     i + 1, emoji, g.getTitle(), bar, g.getProgress()));
         }
         return sb.toString();
+    }
+
+    public String formatGoalsWithProgressHint(List<Goal> goals) {
+        return formatGoalsForUser(goals) + "\n_Прогресс:_ /progress [номер] [0-100]\nПример: /progress 1 40";
     }
 
     private String getCategoryEmoji(GoalCategory category) {

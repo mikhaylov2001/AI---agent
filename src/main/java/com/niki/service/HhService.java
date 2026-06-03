@@ -1,7 +1,8 @@
 package com.niki.service;
 
-import lombok.RequiredArgsConstructor;
+import com.niki.model.User;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -12,13 +13,10 @@ import java.util.*;
 
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class HhService {
 
     private final HhAppTokenService hhAppTokenService;
-
-    @Value("${hh.user-agent:NikiBot/1.5 (babaykin35@gmail.com)}")
-    private String userAgent;
+    private final WebClient hhApiWebClient;
 
     @Value("${hh.default-area:}")
     private String defaultArea;
@@ -26,31 +24,51 @@ public class HhService {
     @Value("${hh.search-per-page:8}")
     private int searchPerPage;
 
-    private WebClient hhClient() {
-        return WebClient.builder()
-                .baseUrl("https://api.hh.ru")
-                .defaultHeader("User-Agent", userAgent)
-                .codecs(c -> c.defaultCodecs().maxInMemorySize(4 * 1024 * 1024))
-                .build();
+    public int getSearchPerPage() {
+        return searchPerPage;
+    }
+
+    public HhService(HhAppTokenService hhAppTokenService,
+                     @Qualifier("hhApiWebClient") WebClient hhApiWebClient) {
+        this.hhAppTokenService = hhAppTokenService;
+        this.hhApiWebClient = hhApiWebClient;
     }
 
     public VacancySearchResult searchVacancies(String query) {
-        return searchVacancies(query, defaultArea, searchPerPage);
+        return searchVacancies(HhSearchFilters.defaults(query, defaultArea, searchPerPage));
+    }
+
+    public VacancySearchResult searchVacancies(User user, String query) {
+        return searchVacancies(HhSearchFilters.fromUser(user, query, defaultArea, searchPerPage));
+    }
+
+    public VacancySearchResult searchVacancies(String query, String area, int count) {
+        return searchVacancies(new HhSearchFilters(
+                StringUtils.hasText(query) ? query : "Java backend developer",
+                area, null, false, false, count));
     }
 
     @SuppressWarnings("unchecked")
-    public VacancySearchResult searchVacancies(String query, String area, int count) {
-        String q = StringUtils.hasText(query) ? query.trim() : "Java backend";
+    public VacancySearchResult searchVacancies(HhSearchFilters filters) {
+        String q = filters.query();
         try {
-            WebClient client = hhClient();
-            var spec = client.get().uri(uriBuilder -> {
+            var spec = hhApiWebClient.get().uri(uriBuilder -> {
                 var b = uriBuilder
                         .path("/vacancies")
                         .queryParam("text", q)
-                        .queryParam("per_page", count)
+                        .queryParam("per_page", filters.perPage())
                         .queryParam("order_by", "publication_time");
-                if (StringUtils.hasText(area)) {
-                    b.queryParam("area", area);
+                if (StringUtils.hasText(filters.area())) {
+                    b.queryParam("area", filters.area());
+                }
+                if (StringUtils.hasText(filters.experience())) {
+                    b.queryParam("experience", filters.experience());
+                }
+                if (filters.remote()) {
+                    b.queryParam("schedule", "remote");
+                }
+                if (filters.onlyWithSalary()) {
+                    b.queryParam("only_with_salary", "true");
                 }
                 return b.build();
             });
@@ -66,13 +84,13 @@ public class HhService {
             }
             List<Map<String, Object>> items = (List<Map<String, Object>>) response.get("items");
             if (items == null || items.isEmpty()) {
-                return VacancySearchResult.empty(q);
+                return VacancySearchResult.empty(q, filters);
             }
             List<VacancyDto> result = new ArrayList<>();
             for (Map<String, Object> item : items) {
                 result.add(parseVacancy(item));
             }
-            return VacancySearchResult.ok(q, result);
+            return VacancySearchResult.ok(q, filters, result);
         } catch (WebClientResponseException e) {
             log.error("HH API {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
             return mapHttpError(e, q);
@@ -94,13 +112,14 @@ public class HhService {
                         "HH 403: проверь Client ID/Secret или дождись одобрения приложения на dev.hh.ru.");
             }
             return VacancySearchResult.error(
-                    "HH требует авторизацию приложения. Добавь HH_CLIENT_ID и HH_CLIENT_SECRET на Render (после одобрения заявки).");
+                    "HH требует авторизацию приложения. Добавь HH_CLIENT_ID и HH_CLIENT_SECRET на Render.");
         }
         return VacancySearchResult.error("HH ошибка " + e.getStatusCode().value());
     }
 
     @SuppressWarnings("unchecked")
     private VacancyDto parseVacancy(Map<String, Object> item) {
+        String id = String.valueOf(item.get("id"));
         String title = (String) item.getOrDefault("name", "Без названия");
         String url = (String) item.getOrDefault("alternate_url", "");
         String company = "Не указан";
@@ -132,7 +151,11 @@ public class HhService {
         if (areaObj != null) {
             area = (String) areaObj.getOrDefault("name", "");
         }
-        return new VacancyDto(title, company, salary, experience, area, url);
+        return new VacancyDto(id, title, company, salary, experience, area, url, null);
+    }
+
+    public VacancyDto withMatchScore(VacancyDto v, Integer score) {
+        return new VacancyDto(v.id(), v.title(), v.company(), v.salary(), v.experience(), v.area(), v.url(), score);
     }
 
     public String formatSearchResult(VacancySearchResult result) {
@@ -140,9 +163,14 @@ public class HhService {
             return "⚠️ " + result.error();
         }
         if (result.vacancies().isEmpty()) {
-            return "😔 По запросу *\"" + result.query() + "\"* вакансий не найдено.\n\nПопробуй /job\\_query Spring Boot";
+            return "😔 По запросу *\"" + result.query() + "\"* вакансий не найдено.\n\nПопробуй другой фильтр или /job\\_query";
         }
-        StringBuilder sb = new StringBuilder("💼 Вакансии: *\"" + result.query() + "*\" (" + result.vacancies().size() + ")\n\n");
+        String filterHint = formatFilterHint(result.filters());
+        StringBuilder sb = new StringBuilder("💼 *Вакансии:* \"" + result.query() + "\" (" + result.vacancies().size() + ")\n");
+        if (!filterHint.isBlank()) {
+            sb.append(filterHint).append("\n");
+        }
+        sb.append("\n");
         for (int i = 0; i < result.vacancies().size(); i++) {
             VacancyDto v = result.vacancies().get(i);
             sb.append(String.format("*%d. %s*\n🏢 %s\n💰 %s\n", i + 1, v.title(), v.company(), v.salary()));
@@ -152,26 +180,50 @@ public class HhService {
             if (!v.experience().isBlank()) {
                 sb.append("📋 ").append(v.experience()).append("\n");
             }
+            if (v.matchScore() != null) {
+                sb.append("🎯 Match: ").append(v.matchScore()).append("%\n");
+            }
             sb.append("🔗 ").append(v.url()).append("\n\n");
         }
-        sb.append("_Письмо: /apply [ссылка]_");
+        sb.append("_Кнопки под сообщением: Откликнуться / Сохранить / Пропустить_");
         return sb.toString();
     }
 
-    public record VacancyDto(String title, String company, String salary, String experience, String area, String url) {
+    private static String formatFilterHint(HhSearchFilters f) {
+        if (f == null) {
+            return "";
+        }
+        List<String> parts = new ArrayList<>();
+        if (StringUtils.hasText(f.area())) {
+            parts.add("регион " + f.area());
+        }
+        if (f.remote()) {
+            parts.add("удалёнка");
+        }
+        if (StringUtils.hasText(f.experience())) {
+            parts.add("опыт: " + f.experience());
+        }
+        return parts.isEmpty() ? "" : "Фильтры: " + String.join(", ", parts);
     }
 
-    public record VacancySearchResult(String query, List<VacancyDto> vacancies, String error) {
-        static VacancySearchResult ok(String query, List<VacancyDto> vacancies) {
-            return new VacancySearchResult(query, vacancies, null);
+    public record VacancyDto(
+            String id, String title, String company, String salary,
+            String experience, String area, String url, Integer matchScore) {
+    }
+
+    public record VacancySearchResult(
+            String query, HhSearchFilters filters, List<VacancyDto> vacancies, String error) {
+
+        static VacancySearchResult ok(String query, HhSearchFilters filters, List<VacancyDto> vacancies) {
+            return new VacancySearchResult(query, filters, vacancies, null);
         }
 
-        static VacancySearchResult empty(String query) {
-            return new VacancySearchResult(query, List.of(), null);
+        static VacancySearchResult empty(String query, HhSearchFilters filters) {
+            return new VacancySearchResult(query, filters, List.of(), null);
         }
 
         static VacancySearchResult error(String error) {
-            return new VacancySearchResult("", List.of(), error);
+            return new VacancySearchResult("", null, List.of(), error);
         }
     }
 }

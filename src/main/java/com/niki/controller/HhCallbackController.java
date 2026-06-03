@@ -1,6 +1,7 @@
 package com.niki.controller;
 
 import com.niki.service.HhOAuthService;
+import com.niki.service.HhOAuthStateService;
 import com.niki.service.NikiMessageSender;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -13,13 +14,15 @@ import org.springframework.web.bind.annotation.*;
 public class HhCallbackController {
 
     private final HhOAuthService hhOAuthService;
+    private final HhOAuthStateService stateService;
     private final NikiMessageSender messageSender;
 
     @GetMapping("/callback")
-    public String callback(@RequestParam String code, @RequestParam Long state) {
+    public String callback(@RequestParam String code, @RequestParam String state) {
         try {
-            hhOAuthService.exchangeCodeForTokens(state, code);
-            messageSender.sendMessage(state,
+            Long telegramId = stateService.decode(state);
+            hhOAuthService.exchangeCodeForTokens(telegramId, code);
+            messageSender.sendMessage(telegramId,
                     "✅ *HH.ru подключён!*\n\n" +
                             "Теперь выбери резюме для откликов:\n/hh\\_resumes");
             return """
@@ -32,5 +35,4 @@ public class HhCallbackController {
             return "<html><body>Ошибка авторизации. Попробуй снова через /connect_hh</body></html>";
         }
     }
-
 }

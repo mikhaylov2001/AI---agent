@@ -1,6 +1,7 @@
 package com.niki.service;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
@@ -12,16 +13,11 @@ import org.springframework.web.reactive.function.client.WebClient;
 import java.time.Instant;
 import java.util.Map;
 
-/**
- * Токен приложения HH (client_credentials) — для поиска вакансий без OAuth пользователя.
- */
 @Service
 @Slf4j
 public class HhAppTokenService {
 
-    private final WebClient hhClient = WebClient.builder()
-            .baseUrl("https://hh.ru")
-            .build();
+    private final WebClient hhOAuthWebClient;
 
     @Value("${hh.client.id:}")
     private String clientId;
@@ -31,6 +27,10 @@ public class HhAppTokenService {
 
     private volatile String cachedToken;
     private volatile Instant tokenExpiresAt;
+
+    public HhAppTokenService(@Qualifier("hhOAuthWebClient") WebClient hhOAuthWebClient) {
+        this.hhOAuthWebClient = hhOAuthWebClient;
+    }
 
     public boolean isConfigured() {
         return StringUtils.hasText(clientId) && StringUtils.hasText(clientSecret);
@@ -54,7 +54,7 @@ public class HhAppTokenService {
                 body.add("client_id", clientId);
                 body.add("client_secret", clientSecret);
 
-                Map<String, Object> response = hhClient.post()
+                Map<String, Object> response = hhOAuthWebClient.post()
                         .uri("/oauth/token")
                         .header("Content-Type", "application/x-www-form-urlencoded")
                         .body(BodyInserters.fromFormData(body))

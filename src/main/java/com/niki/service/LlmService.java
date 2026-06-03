@@ -83,23 +83,9 @@ public class LlmService {
             case NEXT_STEP -> "[РЕЖИМ: СЛЕДУЮЩИЙ ШАГ] " + userText;
             case LEARNING -> "[РЕЖИМ: УЧЁБА] " + userText;
             case MEMORY -> "[РЕЖИМ: ПАМЯТЬ] Покажи что ты помнишь обо мне и что важно обновить.\n" + userText;
+            case INTERVIEW -> "[РЕЖИМ: СОБЕС] Подготовь к собеседованию: mock-вопросы по Java/Spring, разбор вакансии.\n" + userText;
             default -> userText;
         };
-    }
-
-    public String generateCoverLetter(User user, String prompt) {
-        if (!StringUtils.hasText(apiKey)) {
-            return "API ключ Groq не настроен (GROQ_API_KEY).";
-        }
-        List<Map<String, String>> messages = List.of(
-                Map.of("role", "system", "content",
-                        "Ты опытный HR-консультант. Пишешь краткие, конкретные " +
-                                "сопроводительные письма без шаблонных фраз. Без ссылок и цитат."),
-                Map.of("role", "user", "content", prompt)
-        );
-        String letter = callLlm(messages);
-        saveMessage(user, "assistant", "[LETTER]" + letter);
-        return letter;
     }
 
     public String getLastGeneratedLetter(User user) {
@@ -157,9 +143,109 @@ public class LlmService {
             p.append("\nСейчас режим ЧЕК-ИН: сначала спроси энергию 1–10 и что мешает, потом один шаг.\n");
         } else if (intent == ChatIntent.LEARNING) {
             p.append("\nСейчас режим УЧЁБА: фокус на навыках Java backend, без отвлечений.\n");
+        } else if (intent == ChatIntent.INTERVIEW) {
+            p.append("\nСейчас режим СОБЕС: mock-вопросы Java/Spring, STAR-ответы, разбор вакансии. Конкретно и по делу.\n");
         }
 
         return p.toString();
+    }
+
+    public int scoreVacancyMatch(User user, String vacancyTitle, String description) {
+        if (!StringUtils.hasText(apiKey)) {
+            return 50;
+        }
+        mentorProfileService.ensureDefaultProfile(user);
+        String prompt = """
+                Оцени соответствие кандидата вакансии от 0 до 100.
+                Ответь ТОЛЬКО числом (например: 72).
+                
+                Профиль кандидата:
+                %s
+                
+                Вакансия: %s
+                Описание: %s
+                """.formatted(
+                user.getMentorProfile() != null ? user.getMentorProfile() : "",
+                vacancyTitle,
+                description.length() > 600 ? description.substring(0, 600) : description
+        );
+        List<Map<String, String>> messages = List.of(
+                Map.of("role", "system", "content", "Ты HR-аналитик. Отвечай только числом 0-100."),
+                Map.of("role", "user", "content", prompt)
+        );
+        try {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("model", model);
+            body.put("messages", messages);
+            body.put("max_tokens", 10);
+            body.put("temperature", 0.1);
+            Map<String, Object> response = llmWebClient.post()
+                    .uri("/chat/completions")
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .block();
+            if (response == null) {
+                return 50;
+            }
+            List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
+            String raw = cleanResponse((String) ((Map<String, Object>) choices.get(0).get("message")).get("content"));
+            String digits = raw.replaceAll("[^0-9]", "");
+            if (digits.isEmpty()) {
+                return 50;
+            }
+            return Math.min(100, Math.max(0, Integer.parseInt(digits.substring(0, Math.min(3, digits.length())))));
+        } catch (Exception e) {
+            log.warn("scoreVacancyMatch: {}", e.getMessage());
+            return 50;
+        }
+    }
+
+    public String generateCoverLetter(User user, String vacancyName, String description, String resumeSummary, int matchScore) {
+        if (!StringUtils.hasText(apiKey)) {
+            return "API ключ Groq не настроен (GROQ_API_KEY).";
+        }
+        mentorProfileService.ensureDefaultProfile(user);
+        String prompt = String.format("""
+                Напиши сопроводительное письмо (3-4 предложения, русский, без шаблонов).
+                Match score: %d%%
+                
+                Профиль:
+                %s
+                
+                Резюме HH:
+                %s
+                
+                Вакансия: %s
+                Описание: %s
+                """,
+                matchScore,
+                user.getMentorProfile(),
+                StringUtils.hasText(resumeSummary) ? resumeSummary : "(резюме не выбрано)",
+                vacancyName,
+                description
+        );
+        List<Map<String, String>> messages = List.of(
+                Map.of("role", "system", "content",
+                        "Ты HR-консультант. Краткие конкретные письма без клише и ссылок."),
+                Map.of("role", "user", "content", prompt)
+        );
+        String letter = callLlm(messages);
+        saveMessage(user, "assistant", "[LETTER]" + letter);
+        return letter;
+    }
+
+    public String rewriteCoverLetter(User user, String letter, String instruction) {
+        if (!StringUtils.hasText(apiKey)) {
+            return letter;
+        }
+        List<Map<String, String>> messages = List.of(
+                Map.of("role", "system", "content", "Перепиши сопроводительное письмо по инструкции. Только текст письма."),
+                Map.of("role", "user", "content", "Письмо:\n" + letter + "\n\nИнструкция: " + instruction)
+        );
+        String updated = callLlm(messages);
+        saveMessage(user, "assistant", "[LETTER]" + updated);
+        return updated;
     }
 
     @SuppressWarnings("unchecked")

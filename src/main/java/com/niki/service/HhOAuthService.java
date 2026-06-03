@@ -4,6 +4,7 @@ import com.niki.model.User;
 import com.niki.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,10 +25,10 @@ import java.util.Map;
 public class HhOAuthService {
 
     private final UserRepository userRepository;
-    private final WebClient hhClient = WebClient.builder()
-            .baseUrl("https://hh.ru")
-            .defaultHeader("User-Agent", "NikiBot/1.0 (nikibot@gmail.com)")
-            .build();
+    private final HhOAuthStateService stateService;
+
+    @Qualifier("hhOAuthWebClient")
+    private final WebClient hhOAuthWebClient;
 
     @Value("${hh.client.id:}")
     private String clientId;
@@ -42,10 +43,11 @@ public class HhOAuthService {
         if (!StringUtils.hasText(clientId)) {
             return "HH_CLIENT_ID не настроен. Зарегистрируй приложение на dev.hh.ru.";
         }
+        String state = stateService.encode(telegramId);
         String encodedRedirect = URLEncoder.encode(redirectUri, StandardCharsets.UTF_8);
         return String.format(
-                "https://hh.ru/oauth/authorize?response_type=code&client_id=%s&redirect_uri=%s&state=%d",
-                clientId, encodedRedirect, telegramId);
+                "https://hh.ru/oauth/authorize?response_type=code&client_id=%s&redirect_uri=%s&state=%s",
+                clientId, encodedRedirect, state);
     }
 
     @Transactional
@@ -58,7 +60,7 @@ public class HhOAuthService {
         body.add("code", code);
         body.add("redirect_uri", redirectUri);
 
-        Map<String, Object> response = hhClient.post()
+        Map<String, Object> response = hhOAuthWebClient.post()
                 .uri("/oauth/token")
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .body(BodyInserters.fromFormData(body))
@@ -87,7 +89,7 @@ public class HhOAuthService {
         body.add("grant_type", "refresh_token");
         body.add("refresh_token", user.getHhRefreshToken());
 
-        Map<String, Object> response = hhClient.post()
+        Map<String, Object> response = hhOAuthWebClient.post()
                 .uri("/oauth/token")
                 .header("Content-Type", "application/x-www-form-urlencoded")
                 .body(BodyInserters.fromFormData(body))

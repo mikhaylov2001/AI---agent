@@ -4,6 +4,7 @@ import com.niki.service.HhAppTokenService;
 import com.niki.service.HhService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -17,6 +18,7 @@ public class HealthController {
 
     private final HhService hhService;
     private final HhAppTokenService hhAppTokenService;
+    private final JdbcTemplate jdbcTemplate;
 
     @Value("${telegram.bot.token:}")
     private String telegramToken;
@@ -56,7 +58,9 @@ public class HealthController {
     public Map<String, Object> status() {
         Map<String, Object> body = new LinkedHashMap<>();
         boolean llmOk = StringUtils.hasText(llmKey);
-        body.put("status", allRequiredPresent() ? "ready" : "misconfigured");
+        boolean dbOk = checkDb();
+        body.put("status", allRequiredPresent() && dbOk ? "ready" : "misconfigured");
+        body.put("db", dbOk);
         body.put("llm", llmOk);
         body.put("llmProvider", llmProvider);
         body.put("llmModel", llmModel);
@@ -65,7 +69,17 @@ public class HealthController {
         body.put("deliveryMode", deliveryMode);
         body.put("webhookUrl", StringUtils.hasText(webhookUrl) ? webhookUrl : null);
         body.put("hhAppConfigured", hhAppTokenService.isConfigured());
+        body.put("version", "2.0.0");
         return body;
+    }
+
+    private boolean checkDb() {
+        try {
+            jdbcTemplate.queryForObject("SELECT 1", Integer.class);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private boolean allRequiredPresent() {

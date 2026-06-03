@@ -1,4 +1,4 @@
-# Blueprint для Render: New → Blueprint → подключить репозиторий
+# Blueprint для Render
 services:
   - type: web
     name: niki-bot
@@ -12,6 +12,10 @@ services:
         value: NikiMindBot
       - key: TELEGRAM_DELIVERY_MODE
         value: webhook
+      - key: TELEGRAM_WEBHOOK_URL
+        sync: false
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
       - key: LLM_PROVIDER
         value: groq
       - key: LLM_MODEL
@@ -31,4 +35,6 @@ services:
       - key: HH_REDIRECT_URI
         sync: false
       - key: HH_USER_AGENT
+        sync: false
+      - key: NIKI_CRON_SECRET
         sync: false

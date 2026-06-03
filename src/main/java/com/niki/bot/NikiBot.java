@@ -3,6 +3,7 @@ package com.niki.bot;
 import com.niki.handler.CommandHandler;
 import com.niki.service.NikiMessageSender;
 import com.niki.service.ProactiveAgentService;
+import com.niki.util.TelegramHtml;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -14,6 +15,7 @@ import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.commands.BotCommand;
 import org.telegram.telegrambots.meta.api.objects.commands.scope.BotCommandScopeDefault;
+import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.exceptions.TelegramApiException;
 
 import java.util.List;
@@ -50,9 +52,13 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
                     new BotCommand("next_step", "Следующий шаг"),
                     new BotCommand("checkin", "Чек-ин состояния"),
                     new BotCommand("goals", "Мои цели"),
+                    new BotCommand("progress", "Прогресс цели"),
                     new BotCommand("profile", "Мой профиль"),
+                    new BotCommand("memory", "Что помню"),
                     new BotCommand("setup_profile", "Настроить профиль"),
                     new BotCommand("jobs", "Java вакансии"),
+                    new BotCommand("applications", "Мои отклики"),
+                    new BotCommand("interview", "Подготовка к собесу"),
                     new BotCommand("learning", "Помощь с учёбой"),
                     new BotCommand("connect_hh", "Подключить HH.ru"),
                     new BotCommand("autopilot", "Автопилот on/off"),
@@ -75,10 +81,14 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
                 handleCallback(update);
                 return;
             }
-            if (!update.hasMessage() || !update.getMessage().hasText()) {
+            if (!update.hasMessage()) {
                 return;
             }
             var message = update.getMessage();
+            if (!message.hasText()) {
+                sendPlain(message.getChatId(), "Пока понимаю только текст. Напиши /start или используй кнопки.");
+                return;
+            }
             log.info("Сообщение от {}: {}", message.getFrom().getId(), message.getText());
             sendResponse(message.getChatId(), commandHandler.handle(message));
         } catch (Exception e) {
@@ -127,16 +137,17 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
 
     private void sendResponse(Long chatId, BotResponse response) {
         try {
-            execute(buildMessage(chatId, response, false));
+            execute(buildMessage(chatId, response));
         } catch (TelegramApiException e) {
             log.error("Ошибка отправки в {}: {}", chatId, e.getMessage());
         }
     }
 
-    private SendMessage buildMessage(Long chatId, BotResponse response, boolean markdown) {
+    private SendMessage buildMessage(Long chatId, BotResponse response) {
         SendMessage.SendMessageBuilder builder = SendMessage.builder()
                 .chatId(chatId.toString())
-                .text(stripMarkdown(response.text()));
+                .text(TelegramHtml.markdownToHtml(response.text()))
+                .parseMode("HTML");
         if (response.disableWebPreview()) {
             builder.disableWebPagePreview(true);
         }
@@ -148,16 +159,13 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
         return builder.build();
     }
 
-    /** Убираем * и _ чтобы Telegram не отклонял сообщение без parseMode. */
-    private static String stripMarkdown(String text) {
-        if (text == null) {
-            return "";
-        }
-        return text.replace("*", "").replace("_", "");
-    }
-
     @Override
     public void sendMessage(Long chatId, String text) {
         sendResponse(chatId, BotResponse.withMainMenu(text));
+    }
+
+    @Override
+    public void sendMessageWithInline(Long chatId, String text, InlineKeyboardMarkup inline) {
+        sendResponse(chatId, BotResponse.withInlineAndMenu(text, inline));
     }
 }

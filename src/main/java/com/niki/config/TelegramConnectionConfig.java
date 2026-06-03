@@ -26,6 +26,9 @@ public class TelegramConnectionConfig {
     @Value("${telegram.webhook.path:/telegram/webhook}")
     private String webhookPath;
 
+    @Value("${telegram.webhook.secret-token:}")
+    private String secretToken;
+
     @EventListener(ApplicationReadyEvent.class)
     public void registerWebhook() {
         if (!StringUtils.hasText(publicUrl)) {
@@ -34,11 +37,14 @@ public class TelegramConnectionConfig {
         }
         String url = publicUrl.replaceAll("/$", "") + webhookPath;
         try {
-            nikiBot.execute(SetWebhook.builder()
+            var builder = SetWebhook.builder()
                     .url(url)
                     .maxConnections(40)
-                    .dropPendingUpdates(false)
-                    .build());
+                    .dropPendingUpdates(false);
+            if (StringUtils.hasText(secretToken)) {
+                builder.secretToken(secretToken);
+            }
+            nikiBot.execute(builder.build());
             log.info("Telegram WEBHOOK установлен: {}", url);
         } catch (TelegramApiException e) {
             log.error("Не удалось установить webhook {}: {}", url, e.getMessage(), e);

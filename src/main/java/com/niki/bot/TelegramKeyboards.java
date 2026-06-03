@@ -1,5 +1,6 @@
 package com.niki.bot;
 
+import com.niki.service.HhService;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.InlineKeyboardButton;
@@ -8,10 +9,10 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.buttons.Keyboard
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 public final class TelegramKeyboards {
 
-    // Нижнее меню (Reply)
     public static final String BTN_NEXT_STEP = "📋 След. шаг";
     public static final String BTN_CHECKIN = "📊 Чек-ин";
     public static final String BTN_GOALS = "🎯 Мои цели";
@@ -22,11 +23,12 @@ public final class TelegramKeyboards {
     public static final String BTN_CONNECT_HH = "🔗 HH";
     public static final String BTN_RESUMES = "📄 Резюме";
     public static final String BTN_HELP = "❓ Помощь";
+    public static final String BTN_APPLICATIONS = "📋 Отклики";
+    public static final String BTN_INTERVIEW = "🎤 Собес";
 
     private TelegramKeyboards() {
     }
 
-    /** Основная навигация — 4 ряда, самое частое сверху. */
     public static ReplyKeyboardMarkup mainMenu() {
         ReplyKeyboardMarkup keyboard = new ReplyKeyboardMarkup();
         keyboard.setResizeKeyboard(true);
@@ -35,20 +37,20 @@ public final class TelegramKeyboards {
         keyboard.setKeyboard(List.of(
                 row(BTN_NEXT_STEP, BTN_CHECKIN),
                 row(BTN_GOALS, BTN_PROFILE),
-                row(BTN_JOBS, BTN_LEARNING),
+                row(BTN_JOBS, BTN_APPLICATIONS),
+                row(BTN_LEARNING, BTN_INTERVIEW),
                 row(BTN_CONNECT_HH, BTN_HELP)
         ));
         return keyboard;
     }
 
-    /** Меню карьеры / HH. */
     public static ReplyKeyboardMarkup careerMenu() {
         ReplyKeyboardMarkup keyboard = new ReplyKeyboardMarkup();
         keyboard.setResizeKeyboard(true);
         keyboard.setKeyboard(List.of(
                 row(BTN_JOBS, BTN_RESUMES),
-                row(BTN_CONNECT_HH, BTN_NEXT_STEP),
-                row("◀️ Главное меню")
+                row(BTN_APPLICATIONS, BTN_CONNECT_HH),
+                row(BTN_NEXT_STEP, "◀️ Главное меню")
         ));
         return keyboard;
     }
@@ -67,6 +69,21 @@ public final class TelegramKeyboards {
                 List.of(
                         inlineButton(BTN_SETUP_PROFILE, "setup_profile"),
                         inlineButton(BTN_JOBS, "jobs")
+                )
+        ));
+        return markup;
+    }
+
+    public static InlineKeyboardMarkup autopilotOptIn() {
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
+        markup.setKeyboard(List.of(
+                List.of(
+                        inlineButton("✅ Автопилот + алерты", "autopilot:on:both"),
+                        inlineButton("🔔 Только алерты", "autopilot:on:alerts")
+                ),
+                List.of(
+                        inlineButton("⏸ Без автопилота", "autopilot:off"),
+                        inlineButton(BTN_SETUP_PROFILE, "setup_profile")
                 )
         ));
         return markup;
@@ -92,11 +109,60 @@ public final class TelegramKeyboards {
                         inlineButton("Spring Boot", "jobs:Spring Boot developer")
                 ),
                 List.of(
-                        inlineButton("Junior Java", "jobs:Junior Java"),
-                        inlineButton("Удалёнка", "jobs:Java удаленная работа")
+                        inlineButton("Junior remote", "filter:remote:Junior Java"),
+                        inlineButton("Middle backend", "filter:exp:between1And3:Java backend")
+                ),
+                List.of(
+                        inlineButton("Удалёнка", "filter:remote:Java backend"),
+                        inlineButton("С зарплатой", "filter:salary:Java backend")
                 ),
                 List.of(inlineButton("◀️ Главное меню", "main_menu"))
         ));
+        return markup;
+    }
+
+    public static InlineKeyboardMarkup vacancyActions(List<HhService.VacancyDto> vacancies) {
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        int limit = Math.min(vacancies.size(), 5);
+        for (int i = 0; i < limit; i++) {
+            HhService.VacancyDto v = vacancies.get(i);
+            String shortTitle = v.title().length() > 18 ? v.title().substring(0, 18) + "…" : v.title();
+            rows.add(List.of(
+                    inlineButton("✉️ " + shortTitle, "apply:" + v.id()),
+                    inlineButton("💾", "save:" + v.id()),
+                    inlineButton("⏭", "skip:" + v.id())
+            ));
+        }
+        rows.add(List.of(inlineButton("◀️ Меню", "main_menu")));
+        markup.setKeyboard(rows);
+        return markup;
+    }
+
+    public static InlineKeyboardMarkup coverLetterActions(String vacancyId) {
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
+        markup.setKeyboard(List.of(
+                List.of(inlineButton("✅ Отправить отклик", "confirm:" + vacancyId)),
+                List.of(
+                        inlineButton("✂️ Короче", "letter:short:" + vacancyId),
+                        inlineButton("☕ Spring", "letter:spring:" + vacancyId)
+                ),
+                List.of(inlineButton("◀️ Отмена", "main_menu"))
+        ));
+        return markup;
+    }
+
+    public static InlineKeyboardMarkup resumePicker(List<Map<String, String>> resumes) {
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        for (Map<String, String> r : resumes) {
+            String title = r.get("title");
+            if (title.length() > 28) {
+                title = title.substring(0, 28) + "…";
+            }
+            rows.add(List.of(inlineButton("📄 " + title, "resume:" + r.get("id"))));
+        }
+        markup.setKeyboard(rows);
         return markup;
     }
 
