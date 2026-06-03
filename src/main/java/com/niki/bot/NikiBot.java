@@ -2,7 +2,7 @@ package com.niki.bot;
 
 import com.niki.handler.CommandHandler;
 import com.niki.service.NikiMessageSender;
-import com.niki.service.ReminderService;
+import com.niki.service.ProactiveAgentService;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,19 +26,19 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
     private String botUsername;
 
     private final CommandHandler commandHandler;
-    private final ReminderService reminderService;
+    private final ProactiveAgentService proactiveAgentService;
 
     public NikiBot(CommandHandler commandHandler,
-                   ReminderService reminderService,
+                   ProactiveAgentService proactiveAgentService,
                    @Value("${telegram.bot.token}") String token) {
         super(token);
         this.commandHandler = commandHandler;
-        this.reminderService = reminderService;
+        this.proactiveAgentService = proactiveAgentService;
     }
 
     @PostConstruct
     public void init() {
-        reminderService.setMessageSender(this);
+        proactiveAgentService.setMessageSender(this);
         registerBotCommands();
         log.info("Ники запущен! @{}", botUsername);
     }
@@ -55,6 +55,7 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
                     new BotCommand("jobs", "Java вакансии"),
                     new BotCommand("learning", "Помощь с учёбой"),
                     new BotCommand("connect_hh", "Подключить HH.ru"),
+                    new BotCommand("autopilot", "Автопилот on/off"),
                     new BotCommand("help", "Навигация")
             ), new BotCommandScopeDefault(), null));
         } catch (TelegramApiException e) {

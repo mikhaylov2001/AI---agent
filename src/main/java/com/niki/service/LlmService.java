@@ -41,6 +41,19 @@ public class LlmService {
     private String apiKey;
 
     @Transactional
+    public String proactiveBrief(User user, List<Goal> goals, String task) {
+        if (!StringUtils.hasText(apiKey)) {
+            return "Настрой GROQ_API_KEY — тогда смогу писать сам по расписанию.";
+        }
+        mentorProfileService.ensureDefaultProfile(user);
+        List<Map<String, String>> messages = List.of(
+                Map.of("role", "system", "content", buildSystemPrompt(user, goals, ChatIntent.NEXT_STEP)),
+                Map.of("role", "user", "content", "[АВТОПИЛОТ] " + task)
+        );
+        return callLlm(messages);
+    }
+
+    @Transactional
     public String chat(User user, String userText, List<Goal> goals) {
         return chat(user, userText, goals, ChatIntent.DEFAULT);
     }

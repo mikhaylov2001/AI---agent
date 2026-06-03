@@ -45,8 +45,11 @@ hh:
     uri: ${HH_REDIRECT_URI:http://localhost:8080/hh/callback}
 
 niki:
-  morning-cron: "0 0 9 * * *"
-  evening-cron: "0 0 21 * * *"
+  # MSK = UTC+3 (Render работает в UTC)
+  morning-cron: "0 0 6 * * *"    # 09:00 MSK
+  midday-cron: "0 0 11 * * *"    # 14:00 MSK
+  evening-cron: "0 0 18 * * *"   # 21:00 MSK
+  job-alert-cron: "0 0 7,15 * * *"  # 10:00 и 18:00 MSK
 
 logging:
   level:

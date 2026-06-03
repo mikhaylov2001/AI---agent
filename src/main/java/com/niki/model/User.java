@@ -47,6 +47,26 @@ public class User {
     @Column(name = "hh_resume_id")
     private String hhResumeId;
 
+    /** Проактивные сообщения (утро/день/вечер) без запроса пользователя */
+    @Column(name = "proactive_enabled")
+    @Builder.Default
+    private Boolean proactiveEnabled = true;
+
+    /** Алерты новых вакансий HH */
+    @Column(name = "job_alerts_enabled")
+    @Builder.Default
+    private Boolean jobAlertsEnabled = true;
+
+    @Column(name = "job_search_query")
+    @Builder.Default
+    private String jobSearchQuery = "Java backend";
+
+    @Column(name = "last_job_alert_at")
+    private LocalDateTime lastJobAlertAt;
+
+    @Column(name = "last_notified_vacancies", columnDefinition = "TEXT")
+    private String lastNotifiedVacancies;
+
     @Column(name = "created_at")
     private LocalDateTime createdAt;
 

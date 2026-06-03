@@ -27,6 +27,7 @@ public class CommandHandler {
     private final HhApplyService hhApplyService;
     private final UserSessionService sessionService;
     private final MentorProfileService mentorProfileService;
+    private final ProactiveAgentService proactiveAgentService;
 
     public BotResponse handle(Message message) {
         User user = userService.getOrCreateUser(message);
@@ -170,6 +171,24 @@ public class CommandHandler {
                 String letter = llmService.getLastGeneratedLetter(user);
                 yield BotResponse.withCareerMenu(hhApplyService.applyToVacancy(user, args, letter));
             }
+            case "/autopilot" -> {
+                if (args.isBlank()) {
+                    yield BotResponse.withMainMenu(proactiveAgentService.autopilotStatus(user));
+                }
+                yield BotResponse.withMainMenu(proactiveAgentService.setAutopilot(user, parseOnOff(args)));
+            }
+            case "/job_alerts", "/jobalerts" -> {
+                if (args.isBlank()) {
+                    yield BotResponse.withMainMenu(proactiveAgentService.autopilotStatus(user));
+                }
+                yield BotResponse.withMainMenu(proactiveAgentService.setJobAlerts(user, parseOnOff(args)));
+            }
+            case "/job_query", "/jobquery" -> {
+                if (args.isBlank()) {
+                    yield BotResponse.withMainMenu("Укажи запрос:\n/job\\_query Java backend Spring");
+                }
+                yield BotResponse.withMainMenu(proactiveAgentService.setJobQuery(user, args));
+            }
             default -> BotResponse.withMainMenu(
                     "Не знаю команду. Используй кнопки внизу или /help");
         };
@@ -191,7 +210,10 @@ public class CommandHandler {
                 📋 След. шаг · 📊 Чек-ин · 🎯 Цели · 🧠 Профиль
                 💼 Вакансии · 📚 Учёба · ❓ Помощь
                 
-                Или просто напиши текстом 💬
+                🤖 *Автопилот вкл* — пишу сам в 9:00, 14:00, 21:00 (MSK)
+                + алерты вакансий 2 раза в день
+                
+                /autopilot off — выключить
                 """, user.getFirstName());
 
         if (!mentorProfileService.isProfileConfigured(user)) {
@@ -212,14 +234,19 @@ public class CommandHandler {
                 🎯 Цели · 🧠 Профиль · 📚 Учёба
                 💼 Вакансии · 🔗 HH · ❓ Помощь
                 
-                *Команды:*
-                /profile — профиль
-                /setup\\_profile — настроить (4 шага)
-                /goals /addgoal /jobs /apply
+                *Автопилот (сам пишет):*
+                /autopilot on|off — утро 9:00, день 14:00, вечер 21:00 MSK
+                /job\\_alerts on|off — алерты вакансий
+                /job\\_query Java backend
                 
-                Любой текст — диалог с памятью.
-                Формат ответа: что вижу → проблема → помощь → шаг → память.
+                *HH.ru:*
+                /connect\\_hh → /hh\\_resumes → /apply
                 """);
+    }
+
+    private static boolean parseOnOff(String args) {
+        String t = args.trim().toLowerCase(Locale.ROOT);
+        return t.equals("on") || t.equals("1") || t.equals("yes") || t.equals("да") || t.equals("вкл");
     }
 
     private BotResponse connectHh(User user) {
