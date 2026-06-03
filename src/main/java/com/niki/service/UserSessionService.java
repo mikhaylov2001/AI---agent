@@ -12,7 +12,11 @@ public class UserSessionService {
         NONE,
         AWAITING_GOAL_TITLE,
         AWAITING_JOB_QUERY,
-        AWAITING_APPLY_URL
+        AWAITING_APPLY_URL,
+        PROFILE_SETUP_STEP_1,
+        PROFILE_SETUP_STEP_2,
+        PROFILE_SETUP_STEP_3,
+        PROFILE_SETUP_STEP_4
     }
 
     private final Map<Long, State> states = new ConcurrentHashMap<>();

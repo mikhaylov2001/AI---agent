@@ -11,41 +11,76 @@ import java.util.List;
 
 public final class TelegramKeyboards {
 
+    // Нижнее меню (Reply)
+    public static final String BTN_NEXT_STEP = "📋 След. шаг";
+    public static final String BTN_CHECKIN = "📊 Чек-ин";
     public static final String BTN_GOALS = "🎯 Мои цели";
-    public static final String BTN_ADD_GOAL = "➕ Добавить цель";
-    public static final String BTN_JOBS = "💼 Найти вакансии";
-    public static final String BTN_CONNECT_HH = "🔗 Подключить HH";
-    public static final String BTN_RESUMES = "📄 Мои резюме";
+    public static final String BTN_PROFILE = "🧠 Профиль";
+    public static final String BTN_JOBS = "💼 Вакансии";
+    public static final String BTN_LEARNING = "📚 Учёба";
+    public static final String BTN_SETUP_PROFILE = "📝 Настроить профиль";
+    public static final String BTN_CONNECT_HH = "🔗 HH";
+    public static final String BTN_RESUMES = "📄 Резюме";
     public static final String BTN_HELP = "❓ Помощь";
 
     private TelegramKeyboards() {
     }
 
+    /** Основная навигация — 4 ряда, самое частое сверху. */
     public static ReplyKeyboardMarkup mainMenu() {
         ReplyKeyboardMarkup keyboard = new ReplyKeyboardMarkup();
         keyboard.setResizeKeyboard(true);
         keyboard.setOneTimeKeyboard(false);
         keyboard.setSelective(false);
         keyboard.setKeyboard(List.of(
-                row(BTN_GOALS, BTN_ADD_GOAL),
-                row(BTN_JOBS, BTN_CONNECT_HH),
-                row(BTN_RESUMES, BTN_HELP)
+                row(BTN_NEXT_STEP, BTN_CHECKIN),
+                row(BTN_GOALS, BTN_PROFILE),
+                row(BTN_JOBS, BTN_LEARNING),
+                row(BTN_CONNECT_HH, BTN_HELP)
+        ));
+        return keyboard;
+    }
+
+    /** Меню карьеры / HH. */
+    public static ReplyKeyboardMarkup careerMenu() {
+        ReplyKeyboardMarkup keyboard = new ReplyKeyboardMarkup();
+        keyboard.setResizeKeyboard(true);
+        keyboard.setKeyboard(List.of(
+                row(BTN_JOBS, BTN_RESUMES),
+                row(BTN_CONNECT_HH, BTN_NEXT_STEP),
+                row("◀️ Главное меню")
         ));
         return keyboard;
     }
 
     public static InlineKeyboardMarkup startInlineMenu() {
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
-        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
-        rows.add(List.of(
-                inlineButton(BTN_GOALS, "goals"),
-                inlineButton(BTN_JOBS, "jobs")
+        markup.setKeyboard(List.of(
+                List.of(
+                        inlineButton(BTN_NEXT_STEP, "next_step"),
+                        inlineButton(BTN_CHECKIN, "checkin")
+                ),
+                List.of(
+                        inlineButton(BTN_GOALS, "goals"),
+                        inlineButton(BTN_PROFILE, "profile")
+                ),
+                List.of(
+                        inlineButton(BTN_SETUP_PROFILE, "setup_profile"),
+                        inlineButton(BTN_JOBS, "jobs")
+                )
         ));
-        rows.add(List.of(
-                inlineButton(BTN_CONNECT_HH, "connect_hh"),
-                inlineButton(BTN_HELP, "help")
+        return markup;
+    }
+
+    public static InlineKeyboardMarkup profileActions() {
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
+        markup.setKeyboard(List.of(
+                List.of(inlineButton(BTN_SETUP_PROFILE, "setup_profile")),
+                List.of(
+                        inlineButton(BTN_GOALS, "goals"),
+                        inlineButton(BTN_CHECKIN, "checkin")
+                )
         ));
-        markup.setKeyboard(rows);
         return markup;
     }
 
@@ -53,13 +88,14 @@ public final class TelegramKeyboards {
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
         markup.setKeyboard(List.of(
                 List.of(
-                        inlineButton("Java developer", "jobs:Java developer"),
-                        inlineButton("Python", "jobs:Python")
+                        inlineButton("Java backend", "jobs:Java backend"),
+                        inlineButton("Spring Boot", "jobs:Spring Boot developer")
                 ),
                 List.of(
-                        inlineButton("Йошкар-Ола", "jobs:Йошкар-Ола"),
-                        inlineButton("Удалёнка", "jobs:удаленная работа")
-                )
+                        inlineButton("Junior Java", "jobs:Junior Java"),
+                        inlineButton("Удалёнка", "jobs:Java удаленная работа")
+                ),
+                List.of(inlineButton("◀️ Главное меню", "main_menu"))
         ));
         return markup;
     }

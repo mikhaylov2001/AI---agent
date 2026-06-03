@@ -25,6 +25,7 @@ public class OpenAiService {
     private final WebClient openAiWebClient;
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
+    private final MentorProfileService mentorProfileService;
 
     @Value("${openai.api.model}")
     private String model;
@@ -37,19 +38,36 @@ public class OpenAiService {
 
     @Transactional
     public String chat(User user, String userText, List<Goal> goals) {
+        return chat(user, userText, goals, ChatIntent.DEFAULT);
+    }
+
+    @Transactional
+    public String chat(User user, String userText, List<Goal> goals, ChatIntent intent) {
         if (!StringUtils.hasText(apiKey)) {
             return """
                     OpenAI не настроен.
                     Добавь OPENAI_API_KEY в .env (локально) или в Environment на Render.
                     Ключ берётся на platform.openai.com → API keys (это не ChatGPT Plus).""";
         }
-        saveMessage(user, "user", userText);
-        List<Map<String, String>> messages = buildMessages(user, userText, goals);
+        mentorProfileService.ensureDefaultProfile(user);
+        String effectiveText = wrapIntent(userText, intent);
+        saveMessage(user, "user", effectiveText);
+        List<Map<String, String>> messages = buildMessages(user, effectiveText, goals, intent);
         String reply = callOpenAi(messages);
         saveMessage(user, "assistant", reply);
         trimHistory(user.getTelegramId());
         updateMemorySummaryIfNeeded(user);
         return reply;
+    }
+
+    private String wrapIntent(String userText, ChatIntent intent) {
+        return switch (intent) {
+            case CHECK_IN -> "[РЕЖИМ: ЧЕК-ИН] " + userText;
+            case NEXT_STEP -> "[РЕЖИМ: СЛЕДУЮЩИЙ ШАГ] " + userText;
+            case LEARNING -> "[РЕЖИМ: УЧЁБА] " + userText;
+            case MEMORY -> "[РЕЖИМ: ПАМЯТЬ] Покажи что ты помнишь обо мне и что важно обновить.\n" + userText;
+            default -> userText;
+        };
     }
 
     public String generateCoverLetter(User user, String prompt) {
@@ -77,9 +95,9 @@ public class OpenAiService {
                 .orElse("Письмо не найдено. Сначала используй /apply [ссылка]");
     }
 
-    private List<Map<String, String>> buildMessages(User user, String userText, List<Goal> goals) {
+    private List<Map<String, String>> buildMessages(User user, String userText, List<Goal> goals, ChatIntent intent) {
         List<Map<String, String>> messages = new ArrayList<>();
-        messages.add(Map.of("role", "system", "content", buildSystemPrompt(user, goals)));
+        messages.add(Map.of("role", "system", "content", buildSystemPrompt(user, goals, intent)));
         List<ChatMessage> history = chatMessageRepository
                 .findByUserTelegramIdOrderByCreatedAtAsc(user.getTelegramId(), PageRequest.of(0, 30));
         for (int i = 0; i < history.size() - 1; i++) {
@@ -92,27 +110,36 @@ public class OpenAiService {
         return messages;
     }
 
-    private String buildSystemPrompt(User user, List<Goal> goals) {
-        StringBuilder p = new StringBuilder("""
-                Ты — Ники, личный наставник и второй мозг пользователя.
-                Ты умный, прямой, честный и заботливый. Не льстишь.
-                Говоришь как опытный ментор — коротко, конкретно, по делу.
-                Если пользователь отвлекается — мягко возвращаешь к целям.
-                Если застрял — предлагаешь один конкретный следующий шаг.
-                Отвечаешь на русском. Эмодзи умеренно. Максимум 5-6 предложений.
-                """);
-        p.append("\nИмя пользователя: ").append(user.getFirstName()).append("\n");
+    private String buildSystemPrompt(User user, List<Goal> goals, ChatIntent intent) {
+        StringBuilder p = new StringBuilder(mentorProfileService.loadMentorInstructions());
+        p.append("\n\nИмя пользователя: ").append(user.getFirstName()).append("\n");
+
+        if (StringUtils.hasText(user.getMentorProfile())) {
+            p.append("\n--- ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ ---\n")
+                    .append(user.getMentorProfile()).append("\n");
+        }
+
         if (user.getMemorySummary() != null && !user.getMemorySummary().isBlank()) {
-            p.append("\nДолгосрочная память о пользователе:\n")
+            p.append("\n--- ДОЛГОСРОЧНАЯ ПАМЯТЬ ---\n")
                     .append(user.getMemorySummary()).append("\n");
         }
+
         if (!goals.isEmpty()) {
-            p.append("\nАктивные цели:\n");
+            p.append("\n--- АКТИВНЫЕ ЦЕЛИ (из бота) ---\n");
             for (Goal g : goals) {
                 p.append(String.format("- %s (прогресс: %d%%, категория: %s)\n",
                         g.getTitle(), g.getProgress(), g.getCategory()));
             }
         }
+
+        if (intent == ChatIntent.NEXT_STEP) {
+            p.append("\nСейчас режим СЛЕДУЮЩИЙ ШАГ: один action на 15–60 мин, связанный с главной целью Java backend.\n");
+        } else if (intent == ChatIntent.CHECK_IN) {
+            p.append("\nСейчас режим ЧЕК-ИН: сначала спроси энергию 1–10 и что мешает, потом один шаг.\n");
+        } else if (intent == ChatIntent.LEARNING) {
+            p.append("\nСейчас режим УЧЁБА: фокус на навыках Java backend, без отвлечений.\n");
+        }
+
         return p.toString();
     }
 
@@ -193,9 +220,10 @@ public class OpenAiService {
         }
         List<Map<String, String>> summaryRequest = List.of(
                 Map.of("role", "system", "content",
-                        "Сделай краткое резюме (5-7 предложений) о пользователе на основе диалога. " +
-                                "Что важного он рассказал о себе? Какие проблемы? Что мотивирует? " +
-                                "Что мешает целям? Пиши от третьего лица: 'Пользователь...'"),
+                        "Обнови долгосрочную память о пользователе. Структура (кратко, по пунктам):\n" +
+                                "• цели • проекты • навыки • сложности • состояние\n" +
+                                "• прокрастинация • что помогает • что мешает • приоритеты\n" +
+                                "Только факты из диалога. Без воды. От третьего лица: «Пользователь...»"),
                 Map.of("role", "user", "content", "Диалог:\n" + dialogue)
         );
         try {

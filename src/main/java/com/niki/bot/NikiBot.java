@@ -47,13 +47,15 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
         try {
             execute(new SetMyCommands(List.of(
                     new BotCommand("start", "Начать / меню"),
+                    new BotCommand("next_step", "Следующий шаг"),
+                    new BotCommand("checkin", "Чек-ин состояния"),
                     new BotCommand("goals", "Мои цели"),
-                    new BotCommand("addgoal", "Добавить цель"),
-                    new BotCommand("jobs", "Найти вакансии"),
+                    new BotCommand("profile", "Мой профиль"),
+                    new BotCommand("setup_profile", "Настроить профиль"),
+                    new BotCommand("jobs", "Java вакансии"),
+                    new BotCommand("learning", "Помощь с учёбой"),
                     new BotCommand("connect_hh", "Подключить HH.ru"),
-                    new BotCommand("hh_resumes", "Мои резюме"),
-                    new BotCommand("apply", "Отклик на вакансию"),
-                    new BotCommand("help", "Помощь")
+                    new BotCommand("help", "Навигация")
             ), new BotCommandScopeDefault(), null));
         } catch (TelegramApiException e) {
             log.warn("Не удалось зарегистрировать команды меню: {}", e.getMessage());

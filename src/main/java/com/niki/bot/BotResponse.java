@@ -17,8 +17,12 @@ public record BotResponse(
         return new BotResponse(text, TelegramKeyboards.mainMenu(), null, true);
     }
 
-    /** Inline под сообщением (нижнее меню уже закреплено от прошлых ответов). */
-    public static BotResponse withInline(String text, InlineKeyboardMarkup inline) {
-        return new BotResponse(text, null, inline, true);
+    public static BotResponse withCareerMenu(String text) {
+        return new BotResponse(text, TelegramKeyboards.careerMenu(), null, true);
+    }
+
+    /** Inline + нижнее меню остаётся от предыдущих ответов. */
+    public static BotResponse withInlineAndMenu(String text, InlineKeyboardMarkup inline) {
+        return new BotResponse(text, TelegramKeyboards.mainMenu(), inline, true);
     }
 }

@@ -32,6 +32,9 @@ public class User {
     @Column(name = "memory_summary", columnDefinition = "TEXT")
     private String memorySummary;
 
+    @Column(name = "mentor_profile", columnDefinition = "TEXT")
+    private String mentorProfile;
+
     @Column(name = "hh_access_token")
     private String hhAccessToken;
 
