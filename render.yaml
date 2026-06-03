@@ -30,3 +30,5 @@ services:
         sync: false
       - key: HH_REDIRECT_URI
         sync: false
+      - key: HH_USER_AGENT
+        sync: false

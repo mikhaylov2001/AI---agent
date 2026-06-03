@@ -43,6 +43,9 @@ hh:
     secret: ${HH_CLIENT_SECRET:}
   redirect:
     uri: ${HH_REDIRECT_URI:http://localhost:8080/hh/callback}
+  user-agent: ${HH_USER_AGENT:NikiBot/1.5 (babaykin35@gmail.com)}
+  default-area: ${HH_DEFAULT_AREA:}
+  search-per-page: ${HH_SEARCH_PER_PAGE:8}
 
 niki:
   # MSK = UTC+3 (Render работает в UTC)

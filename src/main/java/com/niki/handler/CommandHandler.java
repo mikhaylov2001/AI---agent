@@ -141,10 +141,7 @@ public class CommandHandler {
             }
             case "/jobs" -> {
                 if (args.isBlank()) {
-                    sessionService.setState(user.getTelegramId(), UserSessionService.State.AWAITING_JOB_QUERY);
-                    yield BotResponse.withInlineAndMenu(
-                            "🔍 *Вакансии Java backend*\n\nНапиши запрос или нажми кнопку:",
-                            TelegramKeyboards.jobSearchSuggestions());
+                    yield searchJobs(user, "Java backend developer");
                 }
                 yield searchJobs(user, args);
             }
@@ -262,9 +259,9 @@ public class CommandHandler {
     }
 
     private BotResponse searchJobs(User user, String query) {
-        List<HhService.VacancyDto> vacancies = hhService.searchVacancies(query, 88, 5);
+        HhService.VacancySearchResult result = hhService.searchVacancies(query);
         return BotResponse.withInlineAndMenu(
-                hhService.formatVacancies(vacancies, query),
+                hhService.formatSearchResult(result),
                 TelegramKeyboards.jobSearchSuggestions());
     }
 

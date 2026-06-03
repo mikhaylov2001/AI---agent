@@ -91,11 +91,15 @@ public class ProactiveAgentService {
     public void notifyNewVacancies(User user) {
         String query = StringUtils.hasText(user.getJobSearchQuery())
                 ? user.getJobSearchQuery()
-                : "Java backend";
-        List<HhService.VacancyDto> vacancies = hhService.searchVacancies(query, 88, 5);
-        if (vacancies.isEmpty()) {
+                : "Java backend developer";
+        HhService.VacancySearchResult search = hhService.searchVacancies(query);
+        if (search.error() != null || search.vacancies().isEmpty()) {
+            if (search.error() != null) {
+                log.warn("Job alert skip: {}", search.error());
+            }
             return;
         }
+        List<HhService.VacancyDto> vacancies = search.vacancies();
 
         Set<String> seen = parseSeenIds(user.getLastNotifiedVacancies());
         List<HhService.VacancyDto> fresh = vacancies.stream()

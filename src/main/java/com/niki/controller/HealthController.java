@@ -1,5 +1,8 @@
 package com.niki.controller;
 
+import com.niki.service.HhAppTokenService;
+import com.niki.service.HhService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -9,7 +12,11 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 @RestController
+@RequiredArgsConstructor
 public class HealthController {
+
+    private final HhService hhService;
+    private final HhAppTokenService hhAppTokenService;
 
     @Value("${telegram.bot.token:}")
     private String telegramToken;
@@ -34,6 +41,17 @@ public class HealthController {
         return "ok";
     }
 
+    @GetMapping("/health/hh")
+    public Map<String, Object> hhHealth() {
+        HhService.VacancySearchResult r = hhService.searchVacancies("Java backend", "", 2);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("hhSearch", r.error() == null);
+        body.put("found", r.vacancies().size());
+        body.put("error", r.error());
+        body.put("hhAppConfigured", hhAppTokenService.isConfigured());
+        return body;
+    }
+
     @GetMapping("/health/status")
     public Map<String, Object> status() {
         Map<String, Object> body = new LinkedHashMap<>();
@@ -42,10 +60,11 @@ public class HealthController {
         body.put("llm", llmOk);
         body.put("llmProvider", llmProvider);
         body.put("llmModel", llmModel);
-        body.put("openai", llmOk); // обратная совместимость
+        body.put("openai", llmOk);
         body.put("telegram", StringUtils.hasText(telegramToken));
         body.put("deliveryMode", deliveryMode);
         body.put("webhookUrl", StringUtils.hasText(webhookUrl) ? webhookUrl : null);
+        body.put("hhAppConfigured", hhAppTokenService.isConfigured());
         return body;
     }
 
