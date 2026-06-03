@@ -17,7 +17,7 @@ public class HealthController {
     @Value("${llm.api.key:}")
     private String llmKey;
 
-    @Value("${llm.provider:perplexity}")
+    @Value("${llm.provider:groq}")
     private String llmProvider;
 
     @Value("${llm.api.model:}")

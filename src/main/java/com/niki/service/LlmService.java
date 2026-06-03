@@ -16,6 +16,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.*;
+import java.util.Locale;
 
 @Service
 @RequiredArgsConstructor
@@ -27,7 +28,7 @@ public class LlmService {
     private final UserRepository userRepository;
     private final MentorProfileService mentorProfileService;
 
-    @Value("${llm.provider:perplexity}")
+    @Value("${llm.provider:groq}")
     private String provider;
 
     @Value("${llm.api.model}")
@@ -49,8 +50,8 @@ public class LlmService {
         if (!StringUtils.hasText(apiKey)) {
             return """
                     ИИ не настроен.
-                    Добавь PERPLEXITY_API_KEY в .env или Environment на Render.
-                    Ключ: perplexity.ai → Settings → API.""";
+                    Добавь GROQ_API_KEY в .env или Environment на Render.
+                    Ключ: console.groq.com → API Keys (бесплатно).""";
         }
         mentorProfileService.ensureDefaultProfile(user);
         String effectiveText = wrapIntent(userText, intent);
@@ -75,7 +76,7 @@ public class LlmService {
 
     public String generateCoverLetter(User user, String prompt) {
         if (!StringUtils.hasText(apiKey)) {
-            return "API ключ Perplexity не настроен.";
+            return "API ключ Groq не настроен (GROQ_API_KEY).";
         }
         List<Map<String, String>> messages = List.of(
                 Map.of("role", "system", "content",
@@ -174,7 +175,7 @@ public class LlmService {
             return mapLlmError(e);
         } catch (Exception e) {
             log.error("Ошибка {}: {}", provider, e.getMessage());
-            return "Не удалось связаться с " + provider + ". Проверь PERPLEXITY_API_KEY и интернет.";
+            return "Не удалось связаться с " + provider + ". Проверь GROQ_API_KEY и интернет.";
         }
     }
 
@@ -188,13 +189,15 @@ public class LlmService {
 
     private String mapLlmError(WebClientResponseException e) {
         int status = e.getStatusCode().value();
-        String keyHint = "perplexity".equalsIgnoreCase(provider)
-                ? "PERPLEXITY_API_KEY (perplexity.ai → Settings → API)"
-                : "LLM API key";
+        String keyHint = switch (provider.toLowerCase(Locale.ROOT)) {
+            case "groq" -> "GROQ_API_KEY (console.groq.com → API Keys)";
+            case "perplexity" -> "PERPLEXITY_API_KEY (perplexity.ai → Settings → API)";
+            default -> "LLM API key";
+        };
         return switch (status) {
             case 401 -> "Неверный ключ. Проверь " + keyHint + ".";
-            case 403 -> "Доступ запрещён (403). Проверь баланс/лимиты на perplexity.ai.";
-            case 429 -> "Лимит запросов исчерпан. Подожди минуту.";
+            case 403 -> "Доступ запрещён (403). Проверь лимиты провайдера.";
+            case 429 -> "Лимит запросов исчерпан. Подожди минуту (Groq free tier).";
             case 404 -> "Модель %s не найдена. Проверь LLM_MODEL.".formatted(model);
             default -> provider + " вернул ошибку %d. Смотри логи сервера.".formatted(status);
         };

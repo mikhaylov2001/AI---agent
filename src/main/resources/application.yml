@@ -30,12 +30,11 @@ telegram:
     path: /telegram/webhook
 
 llm:
-  provider: ${LLM_PROVIDER:perplexity}
+  provider: ${LLM_PROVIDER:groq}
   api:
-    # Perplexity по умолчанию; OPENAI_API_KEY — fallback для совместимости
-    key: ${PERPLEXITY_API_KEY:${OPENAI_API_KEY:}}
-    base-url: ${LLM_API_BASE_URL:https://api.perplexity.ai}
-    model: ${LLM_MODEL:sonar}
+    key: ${GROQ_API_KEY:${PERPLEXITY_API_KEY:${OPENAI_API_KEY:}}}
+    base-url: ${LLM_API_BASE_URL:https://api.groq.com/openai/v1}
+    model: ${LLM_MODEL:llama-3.3-70b-versatile}
     max-tokens: ${LLM_MAX_TOKENS:900}
 
 hh:

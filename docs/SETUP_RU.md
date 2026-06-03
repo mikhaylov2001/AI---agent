@@ -1,79 +1,59 @@
 # Настройка Niki Bot
 
-**ИИ:** Perplexity Sonar (не ChatGPT, не OpenAI по умолчанию).
+**ИИ по умолчанию:** Groq (бесплатный tier).
 
 ---
 
-## Шаг 1. Ключ Perplexity
+## Groq API ключ
 
-1. Зайди на [perplexity.ai](https://www.perplexity.ai)
-2. **Settings → API** → Create API key
-3. Скопируй ключ `pplx-...`
-4. Пополни баланс / проверь лимиты на аккаунте
-
----
-
-## Шаг 2. Telegram + Neon
-
-См. предыдущие шаги в этом файле — без изменений.
+1. [console.groq.com](https://console.groq.com) → войти
+2. **API Keys** → Create API Key
+3. Скопируй `gsk_...`
 
 ---
 
-## Шаг 3. Переменные окружения
+## Переменные
 
 ```env
-PERPLEXITY_API_KEY=pplx-...
+GROQ_API_KEY=gsk_...
+LLM_PROVIDER=groq
+LLM_MODEL=llama-3.3-70b-versatile
 TELEGRAM_BOT_TOKEN=...
-TELEGRAM_BOT_USERNAME=NikiMindBot
 DB_URL=jdbc:postgresql://...
 DB_USERNAME=...
 DB_PASSWORD=...
-TELEGRAM_DELIVERY_MODE=polling   # локально
 ```
 
-**Модели Perplexity:**
+**Модели Groq:**
 
 | Модель | Описание |
 |--------|----------|
-| `sonar` | Быстрая, дешевле (по умолчанию) |
-| `sonar-pro` | Умнее, с поиском в интернете |
-
-```env
-LLM_MODEL=sonar-pro
-```
+| `llama-3.3-70b-versatile` | По умолчанию, умная |
+| `llama-3.1-8b-instant` | Быстрее, легче |
 
 ---
 
-## Шаг 4. Render
+## Render
 
 | Key | Value |
 |-----|--------|
-| `PERPLEXITY_API_KEY` | `pplx-...` |
-| `LLM_PROVIDER` | `perplexity` |
-| `LLM_MODEL` | `sonar` |
+| `GROQ_API_KEY` | `gsk_...` |
+| `LLM_PROVIDER` | `groq` |
+| `LLM_MODEL` | `llama-3.3-70b-versatile` |
 | `TELEGRAM_BOT_TOKEN` | от BotFather |
-| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | Neon |
+| `DB_*` | Neon |
 
-Проверка: `https://СЕРВИС.onrender.com/health/status`
-
-```json
-{
-  "status": "ready",
-  "llm": true,
-  "llmProvider": "perplexity",
-  "llmModel": "sonar"
-}
-```
+`/health/status` → `"llm": true, "llmProvider": "groq"`
 
 ---
 
-## OpenAI вместо Perplexity (опционально)
+## Perplexity / OpenAI (опционально)
 
 ```env
-LLM_PROVIDER=openai
-LLM_API_BASE_URL=https://api.openai.com/v1
-LLM_MODEL=gpt-4o-mini
-OPENAI_API_KEY=sk-proj-...
+LLM_PROVIDER=perplexity
+LLM_API_BASE_URL=https://api.perplexity.ai
+LLM_MODEL=sonar
+PERPLEXITY_API_KEY=pplx-...
 ```
 
 ---
@@ -82,7 +62,8 @@ OPENAI_API_KEY=sk-proj-...
 
 | Симптом | Решение |
 |---------|---------|
-| «ИИ не настроен» | Добавь `PERPLEXITY_API_KEY` |
-| 401 | Неверный ключ |
-| 403 | Нет баланса / лимит на perplexity.ai |
-| 429 | Подожди или смени модель на `sonar` |
+| «ИИ не настроен» | `GROQ_API_KEY` на Render |
+| 401 | Неверный ключ — создай новый |
+| 429 | Лимит free tier — подожди 1–2 мин |
+
+**Безопасность:** не публикуй ключ в чатах и GitHub. Только `.env` и Render Environment.

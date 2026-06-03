@@ -23,7 +23,7 @@ public class StartupDiagnostics {
     @Value("${telegram.webhook.public-url:}")
     private String webhookUrl;
 
-    @Value("${llm.provider:perplexity}")
+    @Value("${llm.provider:groq}")
     private String llmProvider;
 
     @Value("${llm.api.key:}")
@@ -56,7 +56,7 @@ public class StartupDiagnostics {
             log.error("TELEGRAM_BOT_TOKEN не задан!");
         }
         if (!StringUtils.hasText(llmKey)) {
-            log.warn("PERPLEXITY_API_KEY не задан — диалог и письма не работают.");
+            log.warn("GROQ_API_KEY не задан — диалог и письма не работают.");
         }
         if ("webhook".equalsIgnoreCase(deliveryMode) && !StringUtils.hasText(webhookUrl)) {
             log.error("Задай TELEGRAM_WEBHOOK_URL или RENDER_EXTERNAL_URL на Render.");
