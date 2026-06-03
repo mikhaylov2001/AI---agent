@@ -23,14 +23,17 @@ public class StartupDiagnostics {
     @Value("${telegram.webhook.public-url:}")
     private String webhookUrl;
 
-    @Value("${openai.api.key:}")
-    private String openAiKey;
+    @Value("${llm.provider:perplexity}")
+    private String llmProvider;
 
-    @Value("${openai.api.base-url:}")
-    private String openAiBaseUrl;
+    @Value("${llm.api.key:}")
+    private String llmKey;
 
-    @Value("${openai.api.model:}")
-    private String openAiModel;
+    @Value("${llm.api.base-url:}")
+    private String llmBaseUrl;
+
+    @Value("${llm.api.model:}")
+    private String llmModel;
 
     @Value("${spring.datasource.url:}")
     private String dbUrl;
@@ -43,16 +46,17 @@ public class StartupDiagnostics {
         if ("webhook".equalsIgnoreCase(deliveryMode)) {
             log.info("Webhook URL: {}", StringUtils.hasText(webhookUrl) ? webhookUrl : "НЕ ЗАДАН — бот не получит сообщения!");
         }
-        log.info("OpenAI: key={}, base={}, model={}",
-                StringUtils.hasText(openAiKey) ? "OK" : "НЕТ",
-                openAiBaseUrl,
-                openAiModel);
+        log.info("LLM: provider={}, key={}, base={}, model={}",
+                llmProvider,
+                StringUtils.hasText(llmKey) ? "OK" : "НЕТ",
+                llmBaseUrl,
+                llmModel);
         log.info("БД: {}", StringUtils.hasText(dbUrl) ? maskJdbc(dbUrl) : "НЕ ЗАДАНА");
         if (!StringUtils.hasText(telegramToken)) {
             log.error("TELEGRAM_BOT_TOKEN не задан!");
         }
-        if (!StringUtils.hasText(openAiKey)) {
-            log.warn("OPENAI_API_KEY не задан — диалог и письма не работают.");
+        if (!StringUtils.hasText(llmKey)) {
+            log.warn("PERPLEXITY_API_KEY не задан — диалог и письма не работают.");
         }
         if ("webhook".equalsIgnoreCase(deliveryMode) && !StringUtils.hasText(webhookUrl)) {
             log.error("Задай TELEGRAM_WEBHOOK_URL или RENDER_EXTERNAL_URL на Render.");

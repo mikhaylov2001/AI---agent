@@ -6,12 +6,12 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.web.reactive.function.client.WebClient;
 
 @Configuration
-public class OpenAiConfig {
+public class LlmConfig {
 
     @Bean
-    public WebClient openAiWebClient(
-            @Value("${openai.api.base-url}") String baseUrl,
-            @Value("${openai.api.key:}") String apiKey) {
+    public WebClient llmWebClient(
+            @Value("${llm.api.base-url}") String baseUrl,
+            @Value("${llm.api.key:}") String apiKey) {
         String normalized = baseUrl.replaceAll("/+$", "");
         return WebClient.builder()
                 .baseUrl(normalized)

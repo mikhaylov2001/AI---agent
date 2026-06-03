@@ -1,48 +1,40 @@
 # Niki Bot
 
-Telegram-бот «Ники» — личный наставник: цели, напоминания, диалог через **OpenAI API**, поиск вакансий и отклики на HH.ru.
+Telegram-бот «Ники» — личный наставник: цели, память, диалог через **Perplexity Sonar**, вакансии HH.ru.
 
-> **ChatGPT Plus не нужен.** Нужен ключ с [platform.openai.com](https://platform.openai.com/api-keys) и баланс на аккаунте.
+> **Мозг бота:** [Perplexity API](https://docs.perplexity.ai) (модель `sonar` по умолчанию).  
+> Ключ: perplexity.ai → Settings → API. OpenAI/ChatGPT **не нужны**.
 
-📖 **Пошаговая настройка:** [docs/SETUP_RU.md](docs/SETUP_RU.md)
+📖 **Настройка:** [docs/SETUP_RU.md](docs/SETUP_RU.md)
 
 ## Стек
 
 - Java 17, Spring Boot 3.2
 - PostgreSQL (Neon)
-- Telegram (webhook на Render / polling локально)
-- OpenAI API
-- Docker + [Render](https://render.com)
+- **Perplexity Sonar API** (OpenAI-compatible)
+- Telegram + Render
 
-## Быстрый старт локально
+## Быстрый старт
 
 ```bash
 cp .env.example .env
-# заполни TELEGRAM_BOT_TOKEN, OPENAI_API_KEY, DB_*
+# PERPLEXITY_API_KEY, TELEGRAM_BOT_TOKEN, DB_*
 
 docker compose up -d postgres
 mvn spring-boot:run
 ```
 
-Напиши боту `/start` и любой текст.
+## Render
 
-## Деплой на Render
+Переменные: `PERPLEXITY_API_KEY`, `TELEGRAM_BOT_TOKEN`, `DB_*`, `LLM_MODEL=sonar`.
 
-1. Подключи репозиторий [AI---agent](https://github.com/mikhaylov2001/AI---agent).
-2. **Environment: Docker**.
-3. Переменные — см. `.env.example` и [docs/SETUP_RU.md](docs/SETUP_RU.md).
-4. Проверка: `/health` → `ok`, `/health/status` → `"status":"ready"`.
+Проверка: `/health/status` → `"llmProvider":"perplexity", "llm":true`.
 
-## Команды бота
+## Переключить обратно на OpenAI
 
-- `/start`, `/help`
-- `/goals`, `/addgoal [цель]`
-- `/jobs [запрос]`
-- `/connect_hh`, `/hh_resumes`, `/use_resume [id]`
-- `/apply [url]`, `/confirm_apply [url]`
-
-Любой текст без команды — диалог с Ники через OpenAI.
-
-## HH.ru
-
-[dev.hh.ru](https://dev.hh.ru) — Redirect URI = `https://<домен>/hh/callback`.
+```env
+LLM_PROVIDER=openai
+LLM_API_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-4o-mini
+OPENAI_API_KEY=sk-proj-...
+```

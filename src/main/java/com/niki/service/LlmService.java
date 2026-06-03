@@ -20,20 +20,23 @@ import java.util.*;
 @Service
 @RequiredArgsConstructor
 @Slf4j
-public class OpenAiService {
+public class LlmService {
 
-    private final WebClient openAiWebClient;
+    private final WebClient llmWebClient;
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
     private final MentorProfileService mentorProfileService;
 
-    @Value("${openai.api.model}")
+    @Value("${llm.provider:perplexity}")
+    private String provider;
+
+    @Value("${llm.api.model}")
     private String model;
 
-    @Value("${openai.api.max-tokens}")
+    @Value("${llm.api.max-tokens}")
     private int maxTokens;
 
-    @Value("${openai.api.key:}")
+    @Value("${llm.api.key:}")
     private String apiKey;
 
     @Transactional
@@ -45,15 +48,15 @@ public class OpenAiService {
     public String chat(User user, String userText, List<Goal> goals, ChatIntent intent) {
         if (!StringUtils.hasText(apiKey)) {
             return """
-                    OpenAI не настроен.
-                    Добавь OPENAI_API_KEY в .env (локально) или в Environment на Render.
-                    Ключ берётся на platform.openai.com → API keys (это не ChatGPT Plus).""";
+                    ИИ не настроен.
+                    Добавь PERPLEXITY_API_KEY в .env или Environment на Render.
+                    Ключ: perplexity.ai → Settings → API.""";
         }
         mentorProfileService.ensureDefaultProfile(user);
         String effectiveText = wrapIntent(userText, intent);
         saveMessage(user, "user", effectiveText);
         List<Map<String, String>> messages = buildMessages(user, effectiveText, goals, intent);
-        String reply = callOpenAi(messages);
+        String reply = callLlm(messages);
         saveMessage(user, "assistant", reply);
         trimHistory(user.getTelegramId());
         updateMemorySummaryIfNeeded(user);
@@ -72,15 +75,15 @@ public class OpenAiService {
 
     public String generateCoverLetter(User user, String prompt) {
         if (!StringUtils.hasText(apiKey)) {
-            return "OpenAI API ключ не настроен.";
+            return "API ключ Perplexity не настроен.";
         }
         List<Map<String, String>> messages = List.of(
                 Map.of("role", "system", "content",
                         "Ты опытный HR-консультант. Пишешь краткие, конкретные " +
-                                "сопроводительные письма без шаблонных фраз."),
+                                "сопроводительные письма без шаблонных фраз. Без ссылок и цитат."),
                 Map.of("role", "user", "content", prompt)
         );
-        String letter = callOpenAi(messages);
+        String letter = callLlm(messages);
         saveMessage(user, "assistant", "[LETTER]" + letter);
         return letter;
     }
@@ -113,6 +116,8 @@ public class OpenAiService {
     private String buildSystemPrompt(User user, List<Goal> goals, ChatIntent intent) {
         StringBuilder p = new StringBuilder(mentorProfileService.loadMentorInstructions());
         p.append("\n\nИмя пользователя: ").append(user.getFirstName()).append("\n");
+        p.append("Провайдер ИИ: ").append(provider).append(" (").append(model).append(").\n");
+        p.append("Не добавляй ссылки [1] и footnotes — отвечай чистым текстом для Telegram.\n");
 
         if (StringUtils.hasText(user.getMentorProfile())) {
             p.append("\n--- ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ ---\n")
@@ -144,47 +149,54 @@ public class OpenAiService {
     }
 
     @SuppressWarnings("unchecked")
-    private String callOpenAi(List<Map<String, String>> messages) {
+    private String callLlm(List<Map<String, String>> messages) {
         try {
-            Map<String, Object> body = Map.of(
-                    "model", model,
-                    "messages", messages,
-                    "max_tokens", maxTokens,
-                    "temperature", 0.7
-            );
-            Map<String, Object> response = openAiWebClient.post()
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("model", model);
+            body.put("messages", messages);
+            body.put("max_tokens", maxTokens);
+            body.put("temperature", 0.7);
+
+            Map<String, Object> response = llmWebClient.post()
                     .uri("/chat/completions")
                     .bodyValue(body)
                     .retrieve()
                     .bodyToMono(Map.class)
                     .block();
             if (response == null) {
-                return "Извини, пустой ответ от OpenAI.";
+                return "Пустой ответ от " + provider + ".";
             }
             List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
             Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-            return (String) message.get("content");
+            return cleanResponse((String) message.get("content"));
         } catch (WebClientResponseException e) {
-            log.error("Ошибка OpenAI {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
-            return mapOpenAiError(e);
+            log.error("Ошибка {} {}: {}", provider, e.getStatusCode(), e.getResponseBodyAsString());
+            return mapLlmError(e);
         } catch (Exception e) {
-            log.error("Ошибка OpenAI: {}", e.getMessage());
-            return "Не удалось связаться с OpenAI. Проверь интернет и OPENAI_API_BASE_URL. Попробуй через минуту.";
+            log.error("Ошибка {}: {}", provider, e.getMessage());
+            return "Не удалось связаться с " + provider + ". Проверь PERPLEXITY_API_KEY и интернет.";
         }
     }
 
-    private String mapOpenAiError(WebClientResponseException e) {
+    /** Убираем citation-маркеры Perplexity [1][2] для Telegram. */
+    private static String cleanResponse(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replaceAll("\\[\\d+\\]", "").replaceAll("\\s{2,}", " ").trim();
+    }
+
+    private String mapLlmError(WebClientResponseException e) {
         int status = e.getStatusCode().value();
+        String keyHint = "perplexity".equalsIgnoreCase(provider)
+                ? "PERPLEXITY_API_KEY (perplexity.ai → Settings → API)"
+                : "LLM API key";
         return switch (status) {
-            case 401 -> "Неверный OPENAI_API_KEY. Создай новый ключ на platform.openai.com.";
-            case 403 -> """
-                    OpenAI отклонил запрос (403). Частые причины:
-                    • нет баланса на аккаунте OpenAI;
-                    • регион заблокирован — сервер на Render обычно работает, локально нужен VPN;
-                    • ключ без доступа к модели %s.""".formatted(model).trim();
-            case 429 -> "Лимит OpenAI исчерпан. Подожди минуту или пополни баланс.";
-            case 404 -> "Модель %s не найдена. Проверь OPENAI_MODEL.".formatted(model);
-            default -> "OpenAI вернул ошибку %d. Смотри логи сервера.".formatted(status);
+            case 401 -> "Неверный ключ. Проверь " + keyHint + ".";
+            case 403 -> "Доступ запрещён (403). Проверь баланс/лимиты на perplexity.ai.";
+            case 429 -> "Лимит запросов исчерпан. Подожди минуту.";
+            case 404 -> "Модель %s не найдена. Проверь LLM_MODEL.".formatted(model);
+            default -> provider + " вернул ошибку %d. Смотри логи сервера.".formatted(status);
         };
     }
 
@@ -231,14 +243,15 @@ public class OpenAiService {
                     "model", model, "messages", summaryRequest,
                     "max_tokens", 300, "temperature", 0.3
             );
-            Map<String, Object> response = openAiWebClient.post()
+            Map<String, Object> response = llmWebClient.post()
                     .uri("/chat/completions")
                     .bodyValue(body).retrieve().bodyToMono(Map.class).block();
             if (response == null) {
                 return;
             }
             List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
-            String summary = (String) ((Map<String, Object>) choices.get(0).get("message")).get("content");
+            String summary = cleanResponse(
+                    (String) ((Map<String, Object>) choices.get(0).get("message")).get("content"));
             user.setMemorySummary(summary);
             userRepository.save(user);
             log.info("Память обновлена для {}", user.getFirstName());

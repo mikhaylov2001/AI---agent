@@ -12,9 +12,11 @@ services:
         value: NikiMindBot
       - key: TELEGRAM_DELIVERY_MODE
         value: webhook
-      - key: OPENAI_MODEL
-        value: gpt-4o-mini
-      - key: OPENAI_API_KEY
+      - key: LLM_PROVIDER
+        value: perplexity
+      - key: LLM_MODEL
+        value: sonar
+      - key: PERPLEXITY_API_KEY
         sync: false
       - key: DB_URL
         sync: false

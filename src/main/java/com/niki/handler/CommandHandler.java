@@ -21,7 +21,7 @@ public class CommandHandler {
 
     private final UserService userService;
     private final GoalService goalService;
-    private final OpenAiService openAiService;
+    private final LlmService llmService;
     private final HhService hhService;
     private final HhOAuthService hhOAuthService;
     private final HhApplyService hhApplyService;
@@ -69,7 +69,7 @@ public class CommandHandler {
         }
 
         List<Goal> goals = goalService.getActiveGoals(user.getTelegramId());
-        return BotResponse.withMainMenu(openAiService.chat(user, text, goals));
+        return BotResponse.withMainMenu(llmService.chat(user, text, goals));
     }
 
     public BotResponse handleCallback(Long telegramId, String data) {
@@ -167,7 +167,7 @@ public class CommandHandler {
                 if (args.isBlank()) {
                     yield BotResponse.withCareerMenu("Укажи ссылку:\n/confirm\\_apply https://hh.ru/vacancy/123456");
                 }
-                String letter = openAiService.getLastGeneratedLetter(user);
+                String letter = llmService.getLastGeneratedLetter(user);
                 yield BotResponse.withCareerMenu(hhApplyService.applyToVacancy(user, args, letter));
             }
             default -> BotResponse.withMainMenu(
@@ -177,7 +177,7 @@ public class CommandHandler {
 
     private BotResponse mentorChat(User user, String text, ChatIntent intent) {
         List<Goal> goals = goalService.getActiveGoals(user.getTelegramId());
-        return BotResponse.withMainMenu(openAiService.chat(user, text, goals, intent));
+        return BotResponse.withMainMenu(llmService.chat(user, text, goals, intent));
     }
 
     private BotResponse startMessage(User user) {
@@ -258,7 +258,7 @@ public class CommandHandler {
                 "Напиши сопроводительное письмо для вакансии '%s'.\nОписание: %s\nЦели: %s\n" +
                         "3-4 предложения, без шаблонов, на русском.",
                 vacancyName, description, goalsText);
-        String letter = openAiService.generateCoverLetter(user, prompt);
+        String letter = llmService.generateCoverLetter(user, prompt);
         return BotResponse.withCareerMenu(
                 "📋 *Вакансия:* " + vacancyName + "\n\n*Письмо:*\n\n" + letter +
                         "\n\nОтправить?\n/confirm\\_apply " + vacancyUrl);

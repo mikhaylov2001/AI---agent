@@ -14,8 +14,14 @@ public class HealthController {
     @Value("${telegram.bot.token:}")
     private String telegramToken;
 
-    @Value("${openai.api.key:}")
-    private String openAiKey;
+    @Value("${llm.api.key:}")
+    private String llmKey;
+
+    @Value("${llm.provider:perplexity}")
+    private String llmProvider;
+
+    @Value("${llm.api.model:}")
+    private String llmModel;
 
     @Value("${telegram.delivery-mode:webhook}")
     private String deliveryMode;
@@ -28,20 +34,23 @@ public class HealthController {
         return "ok";
     }
 
-    /** Статус без секретов — для проверки после деплоя. */
     @GetMapping("/health/status")
     public Map<String, Object> status() {
         Map<String, Object> body = new LinkedHashMap<>();
+        boolean llmOk = StringUtils.hasText(llmKey);
         body.put("status", allRequiredPresent() ? "ready" : "misconfigured");
+        body.put("llm", llmOk);
+        body.put("llmProvider", llmProvider);
+        body.put("llmModel", llmModel);
+        body.put("openai", llmOk); // обратная совместимость
         body.put("telegram", StringUtils.hasText(telegramToken));
-        body.put("openai", StringUtils.hasText(openAiKey));
         body.put("deliveryMode", deliveryMode);
         body.put("webhookUrl", StringUtils.hasText(webhookUrl) ? webhookUrl : null);
         return body;
     }
 
     private boolean allRequiredPresent() {
-        if (!StringUtils.hasText(telegramToken) || !StringUtils.hasText(openAiKey)) {
+        if (!StringUtils.hasText(telegramToken) || !StringUtils.hasText(llmKey)) {
             return false;
         }
         if ("webhook".equalsIgnoreCase(deliveryMode)) {
