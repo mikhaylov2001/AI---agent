@@ -12,8 +12,8 @@ services:
         value: NikiMindBot
       - key: TELEGRAM_DELIVERY_MODE
         value: webhook
-      - key: TELEGRAM_WEBHOOK_URL
-        value: https://ai-agent-fgo1.onrender.com
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
       - key: OPENAI_API_KEY
         sync: false
       - key: DB_URL

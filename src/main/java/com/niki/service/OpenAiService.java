@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.*;
 
@@ -37,7 +38,10 @@ public class OpenAiService {
     @Transactional
     public String chat(User user, String userText, List<Goal> goals) {
         if (!StringUtils.hasText(apiKey)) {
-            return "OpenAI API ключ не настроен. Добавь OPENAI_API_KEY в переменные окружения на Render.";
+            return """
+                    OpenAI не настроен.
+                    Добавь OPENAI_API_KEY в .env (локально) или в Environment на Render.
+                    Ключ берётся на platform.openai.com → API keys (это не ChatGPT Plus).""";
         }
         saveMessage(user, "user", userText);
         List<Map<String, String>> messages = buildMessages(user, userText, goals);
@@ -133,10 +137,28 @@ public class OpenAiService {
             List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
             Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
             return (String) message.get("content");
+        } catch (WebClientResponseException e) {
+            log.error("Ошибка OpenAI {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
+            return mapOpenAiError(e);
         } catch (Exception e) {
             log.error("Ошибка OpenAI: {}", e.getMessage());
-            return "Извини, технические проблемы. Попробуй через минуту 🙂";
+            return "Не удалось связаться с OpenAI. Проверь интернет и OPENAI_API_BASE_URL. Попробуй через минуту.";
         }
+    }
+
+    private String mapOpenAiError(WebClientResponseException e) {
+        int status = e.getStatusCode().value();
+        return switch (status) {
+            case 401 -> "Неверный OPENAI_API_KEY. Создай новый ключ на platform.openai.com.";
+            case 403 -> """
+                    OpenAI отклонил запрос (403). Частые причины:
+                    • нет баланса на аккаунте OpenAI;
+                    • регион заблокирован — сервер на Render обычно работает, локально нужен VPN;
+                    • ключ без доступа к модели %s.""".formatted(model).trim();
+            case 429 -> "Лимит OpenAI исчерпан. Подожди минуту или пополни баланс.";
+            case 404 -> "Модель %s не найдена. Проверь OPENAI_MODEL.".formatted(model);
+            default -> "OpenAI вернул ошибку %d. Смотри логи сервера.".formatted(status);
+        };
     }
 
     private void saveMessage(User user, String role, String content) {

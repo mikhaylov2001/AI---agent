@@ -19,6 +19,11 @@ services:
       - "8080:8080"
     env_file:
       - .env
+    environment:
+      TELEGRAM_DELIVERY_MODE: polling
+      DB_URL: jdbc:postgresql://postgres:5432/nikidb
+      DB_USERNAME: postgres
+      DB_PASSWORD: postgres
     depends_on:
       - postgres
 

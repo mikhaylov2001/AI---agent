@@ -8,14 +8,13 @@ import org.springframework.web.reactive.function.client.WebClient;
 @Configuration
 public class OpenAiConfig {
 
-    @Value("${openai.api.url}")
-    private String apiUrl;
-
     @Bean
-    public WebClient openAiWebClient(@Value("${openai.api.key:}") String apiKey) {
-        String baseUrl = apiUrl.replaceAll("/chat/completions/?$", "");
+    public WebClient openAiWebClient(
+            @Value("${openai.api.base-url}") String baseUrl,
+            @Value("${openai.api.key:}") String apiKey) {
+        String normalized = baseUrl.replaceAll("/+$", "");
         return WebClient.builder()
-                .baseUrl(baseUrl)
+                .baseUrl(normalized)
                 .defaultHeader("Authorization", "Bearer " + apiKey)
                 .defaultHeader("Content-Type", "application/json")
                 .codecs(c -> c.defaultCodecs().maxInMemorySize(16 * 1024 * 1024))

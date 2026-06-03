@@ -12,7 +12,7 @@
 
     <groupId>com.niki</groupId>
     <artifactId>niki-bot</artifactId>
-    <version>1.0.6</version>
+    <version>1.0.7</version>
     <name>Niki Bot</name>
 
     <properties>
@@ -58,6 +58,11 @@
             <groupId>org.glassfish.jaxb</groupId>
             <artifactId>jaxb-runtime</artifactId>
             <version>2.3.9</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.cdimascio</groupId>
+            <artifactId>dotenv-java</artifactId>
+            <version>3.0.2</version>
         </dependency>
         <dependency>
             <groupId>org.projectlombok</groupId>

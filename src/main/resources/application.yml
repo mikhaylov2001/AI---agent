@@ -19,21 +19,23 @@ spring:
 
 telegram:
   # webhook — для Render (будит сервис при каждом сообщении)
-  # polling — только локально: TELEGRAM_DELIVERY_MODE=polling
+  # polling — локально: TELEGRAM_DELIVERY_MODE=polling
   delivery-mode: ${TELEGRAM_DELIVERY_MODE:webhook}
   bot:
-    token: ${TELEGRAM_BOT_TOKEN}
-    username: ${TELEGRAM_BOT_USERNAME}
+    token: ${TELEGRAM_BOT_TOKEN:}
+    username: ${TELEGRAM_BOT_USERNAME:NikiMindBot}
   webhook:
-    public-url: ${TELEGRAM_WEBHOOK_URL:https://ai-agent-fgo1.onrender.com}
+    # Render подставляет RENDER_EXTERNAL_URL; иначе TELEGRAM_WEBHOOK_URL
+    public-url: ${TELEGRAM_WEBHOOK_URL:${RENDER_EXTERNAL_URL:}}
     path: /telegram/webhook
 
 openai:
   api:
     key: ${OPENAI_API_KEY:}
-    url: https://api.openai.com/v1/chat/completions
-    model: gpt-4o-mini
-    max-tokens: 600
+    # Прямой OpenAI или совместимый прокси (OpenRouter и т.д.)
+    base-url: ${OPENAI_API_BASE_URL:https://api.openai.com/v1}
+    model: ${OPENAI_MODEL:gpt-4o-mini}
+    max-tokens: ${OPENAI_MAX_TOKENS:600}
 
 hh:
   client:
