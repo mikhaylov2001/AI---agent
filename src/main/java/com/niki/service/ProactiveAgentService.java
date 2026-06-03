@@ -45,7 +45,7 @@ public class ProactiveAgentService {
                     ? "целей пока нет — предложи одну маленькую цель на сегодня"
                     : "главная цель: " + goals.get(0).getTitle();
             String text = llmService.proactiveBrief(user, goals,
-                    "Утренний бриф. " + goalsHint + ". Коротко: что вижу, один шаг на сегодня. Без воды.");
+                    "Коротко. " + goalsHint + ". Один шаг на сегодня.");
             send(user.getTelegramId(), "☀️ *Доброе утро!*\n\n" + text);
         });
     }
@@ -54,7 +54,7 @@ public class ProactiveAgentService {
     public void middayCheckIn() {
         runForProactiveUsers(user -> {
             String text = llmService.proactiveBrief(user, goalService.getActiveGoals(user.getTelegramId()),
-                    "Дневной чек-ин. Спроси энергию 1-10 и предложи один шаг до вечера.");
+                    "Чек-ин: спроси энергию 1-10, один шаг до вечера.");
             send(user.getTelegramId(), "📊 *Чек-ин дня*\n\n" + text);
         });
     }
@@ -63,7 +63,7 @@ public class ProactiveAgentService {
     public void eveningRecap() {
         runForProactiveUsers(user -> {
             String text = llmService.proactiveBrief(user, goalService.getActiveGoals(user.getTelegramId()),
-                    "Вечерний итог. Спроси что сделано сегодня и один шаг на завтра.");
+                    "Вечер: что сделано? один шаг на завтра.");
             send(user.getTelegramId(), "🌙 *Вечер*\n\n" + text);
         });
     }

@@ -37,6 +37,12 @@ public class LlmService {
     @Value("${llm.api.max-tokens}")
     private int maxTokens;
 
+    @Value("${llm.api.temperature:0.35}")
+    private double temperature;
+
+    @Value("${llm.api.proactive-max-tokens:220}")
+    private int proactiveMaxTokens;
+
     @Value("${llm.api.key:}")
     private String apiKey;
 
@@ -48,9 +54,9 @@ public class LlmService {
         mentorProfileService.ensureDefaultProfile(user);
         List<Map<String, String>> messages = List.of(
                 Map.of("role", "system", "content", buildSystemPrompt(user, goals, ChatIntent.NEXT_STEP)),
-                Map.of("role", "user", "content", "[АВТОПИЛОТ] " + task)
+                Map.of("role", "user", "content", "[АВТОПИЛОТ] " + task + "\n\nОтвет: макс. 5 строк, сразу ▶️ Шаг, без воды.")
         );
-        return callLlm(messages);
+        return callLlm(messages, proactiveMaxTokens, 0.3);
     }
 
     @Transactional
@@ -70,7 +76,8 @@ public class LlmService {
         String effectiveText = wrapIntent(userText, intent);
         saveMessage(user, "user", effectiveText);
         List<Map<String, String>> messages = buildMessages(user, effectiveText, goals, intent);
-        String reply = callLlm(messages);
+        int tokens = tokensForIntent(intent);
+        String reply = callLlm(messages, tokens, temperature);
         saveMessage(user, "assistant", reply);
         trimHistory(user.getTelegramId());
         updateMemorySummaryIfNeeded(user);
@@ -102,7 +109,7 @@ public class LlmService {
         List<Map<String, String>> messages = new ArrayList<>();
         messages.add(Map.of("role", "system", "content", buildSystemPrompt(user, goals, intent)));
         List<ChatMessage> history = chatMessageRepository
-                .findByUserTelegramIdOrderByCreatedAtAsc(user.getTelegramId(), PageRequest.of(0, 30));
+                .findByUserTelegramIdOrderByCreatedAtAsc(user.getTelegramId(), PageRequest.of(0, 15));
         for (int i = 0; i < history.size() - 1; i++) {
             ChatMessage msg = history.get(i);
             if (!msg.getContent().startsWith("[LETTER]")) {
@@ -117,7 +124,14 @@ public class LlmService {
         StringBuilder p = new StringBuilder(mentorProfileService.loadMentorInstructions());
         p.append("\n\nИмя пользователя: ").append(user.getFirstName()).append("\n");
         p.append("Провайдер ИИ: ").append(provider).append(" (").append(model).append(").\n");
-        p.append("Не добавляй ссылки [1] и footnotes — отвечай чистым текстом для Telegram.\n");
+        p.append("""
+                
+                ЖЁСТКИЕ ЛИМИТЫ (нарушать нельзя):
+                - Обычный ответ: ≤ 600 символов, 4 блока максимум
+                - Каждый блок — 1–2 короткие строки
+                - Нет блока = не пиши заголовок
+                - Telegram: без ссылок [1], без footnotes, без markdown-таблиц
+                """);
 
         if (StringUtils.hasText(user.getMentorProfile())) {
             p.append("\n--- ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ ---\n")
@@ -138,16 +152,27 @@ public class LlmService {
         }
 
         if (intent == ChatIntent.NEXT_STEP) {
-            p.append("\nСейчас режим СЛЕДУЮЩИЙ ШАГ: один action на 15–60 мин, связанный с главной целью Java backend.\n");
+            p.append("\nРЕЖИМ СЛЕДУЮЩИЙ ШАГ: только ▶️ Шаг, 1–2 строки. Без 📍 и ⚠️.\n");
         } else if (intent == ChatIntent.CHECK_IN) {
-            p.append("\nСейчас режим ЧЕК-ИН: сначала спроси энергию 1–10 и что мешает, потом один шаг.\n");
+            p.append("\nРЕЖИМ ЧЕК-ИН: «Энергия 1–10? Что мешает?» + ▶️ один шаг. Макс. 4 строки.\n");
         } else if (intent == ChatIntent.LEARNING) {
-            p.append("\nСейчас режим УЧЁБА: фокус на навыках Java backend, без отвлечений.\n");
+            p.append("\nРЕЖИМ УЧЁБА: ▶️ шаг + 1 пример. Без теории на полстраницы.\n");
         } else if (intent == ChatIntent.INTERVIEW) {
-            p.append("\nСейчас режим СОБЕС: mock-вопросы Java/Spring, STAR-ответы, разбор вакансии. Конкретно и по делу.\n");
+            p.append("\nРЕЖИМ СОБЕС: ровно 3 вопроса (нумерованный список) + ▶️ как готовить ответ. Макс. 8 строк.\n");
+        } else if (intent == ChatIntent.MEMORY) {
+            p.append("\nРЕЖИМ ПАМЯТЬ: список фактов буллетами, макс. 6 пунктов, без советов.\n");
         }
 
         return p.toString();
+    }
+
+    private int tokensForIntent(ChatIntent intent) {
+        return switch (intent) {
+            case NEXT_STEP, CHECK_IN -> 180;
+            case LEARNING, INTERVIEW -> 350;
+            case MEMORY -> 300;
+            default -> maxTokens;
+        };
     }
 
     public int scoreVacancyMatch(User user, String vacancyTitle, String description) {
@@ -250,12 +275,17 @@ public class LlmService {
 
     @SuppressWarnings("unchecked")
     private String callLlm(List<Map<String, String>> messages) {
+        return callLlm(messages, maxTokens, temperature);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String callLlm(List<Map<String, String>> messages, int tokens, double temp) {
         try {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("model", model);
             body.put("messages", messages);
-            body.put("max_tokens", maxTokens);
-            body.put("temperature", 0.7);
+            body.put("max_tokens", tokens);
+            body.put("temperature", temp);
 
             Map<String, Object> response = llmWebClient.post()
                     .uri("/chat/completions")
@@ -278,12 +308,19 @@ public class LlmService {
         }
     }
 
-    /** Убираем citation-маркеры Perplexity [1][2] для Telegram. */
+    /** Убираем citation-маркеры и лишние переносы для Telegram. */
     private static String cleanResponse(String text) {
         if (text == null) {
             return "";
         }
-        return text.replaceAll("\\[\\d+\\]", "").replaceAll("\\s{2,}", " ").trim();
+        String cleaned = text.replaceAll("\\[\\d+\\]", "")
+                .replaceAll("(?m)^\\s*(Конечно|Отличный вопрос|Хороший вопрос)[,!]?.{0,20}\\n", "")
+                .replaceAll("\\n{3,}", "\n\n")
+                .trim();
+        if (cleaned.length() > 1200) {
+            cleaned = cleaned.substring(0, 1197) + "…";
+        }
+        return cleaned;
     }
 
     private String mapLlmError(WebClientResponseException e) {
