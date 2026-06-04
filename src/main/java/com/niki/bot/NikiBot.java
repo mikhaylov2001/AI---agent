@@ -3,6 +3,7 @@ package com.niki.bot;
 import com.niki.handler.CommandHandler;
 import com.niki.service.NikiMessageSender;
 import com.niki.service.ProactiveAgentService;
+import com.niki.util.MentorResponseFormatter;
 import com.niki.util.TelegramHtml;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -139,7 +140,18 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
         try {
             execute(buildMessage(chatId, response));
         } catch (TelegramApiException e) {
-            log.error("Ошибка отправки в {}: {}", chatId, e.getMessage());
+            log.warn("HTML не прошёл, шлём plain: {}", e.getMessage());
+            try {
+                execute(SendMessage.builder()
+                        .chatId(chatId.toString())
+                        .text(MentorResponseFormatter.sanitizePlain(response.text()))
+                        .disableWebPagePreview(response.disableWebPreview())
+                        .replyMarkup(response.inlineKeyboard() != null
+                                ? response.inlineKeyboard() : response.replyKeyboard())
+                        .build());
+            } catch (TelegramApiException e2) {
+                log.error("Ошибка отправки в {}: {}", chatId, e2.getMessage());
+            }
         }
     }
 

@@ -49,15 +49,34 @@ public class LlmService {
 
     @Transactional
     public String proactiveBrief(User user, List<Goal> goals, String task) {
+        String fallback = staticProactiveMessage(task, goals);
         if (!StringUtils.hasText(apiKey)) {
-            return "Настрой GROQ_API_KEY — тогда смогу писать сам по расписанию.";
+            return fallback;
         }
         mentorProfileService.ensureDefaultProfile(user);
         List<Map<String, String>> messages = List.of(
                 Map.of("role", "system", "content", buildSystemPrompt(user, goals, ChatIntent.NEXT_STEP)),
-                Map.of("role", "user", "content", "[АВТОПИЛОТ] " + task + "\n\nОтвет: макс. 5 строк, сразу ▶️ Шаг, без воды.")
+                Map.of("role", "user", "content",
+                        "[АВТОПИЛОТ] " + task + "\n\nОтвет СТРОГО в формате:\n▶️ *Сейчас*\nN мин · задача · результат")
         );
-        return MentorResponseFormatter.format(callLlm(messages, proactiveMaxTokens, 0.3), ChatIntent.NEXT_STEP);
+        String llm = callLlm(messages, proactiveMaxTokens, 0.3);
+        if (MentorResponseFormatter.shouldSkipFormatting(llm)) {
+            return fallback;
+        }
+        String formatted = MentorResponseFormatter.format(llm, ChatIntent.NEXT_STEP);
+        return formatted.contains("Сейчас") ? formatted : fallback;
+    }
+
+    private static String staticProactiveMessage(String task, List<Goal> goals) {
+        String goal = goals.isEmpty() ? "Java backend" : goals.get(0).getTitle();
+        String lower = task.toLowerCase();
+        if (lower.contains("чек-ин") || lower.contains("чек")) {
+            return "▶️ *Сейчас*\n20 мин · один шаг по «" + goal + "»";
+        }
+        if (lower.contains("вечер")) {
+            return "▶️ *Сейчас*\nИтог дня + завтра: 25 мин · «" + goal + "»";
+        }
+        return "▶️ *Сейчас*\n25 мин · «" + goal + "» · один конкретный action";
     }
 
     @Transactional
@@ -78,7 +97,10 @@ public class LlmService {
         saveMessage(user, "user", effectiveText);
         List<Map<String, String>> messages = buildMessages(user, effectiveText, goals, intent);
         int tokens = tokensForIntent(intent);
-        String reply = MentorResponseFormatter.format(callLlm(messages, tokens, temperature), intent);
+        String llm = callLlm(messages, tokens, temperature);
+        String reply = MentorResponseFormatter.shouldSkipFormatting(llm)
+                ? llm
+                : MentorResponseFormatter.format(llm, intent);
         saveMessage(user, "assistant", reply);
         trimHistory(user.getTelegramId());
         updateMemorySummaryIfNeeded(user);
@@ -281,6 +303,11 @@ public class LlmService {
 
     @SuppressWarnings("unchecked")
     private String callLlm(List<Map<String, String>> messages, int tokens, double temp) {
+        return callLlmWithRetry(messages, tokens, temp, 1);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String callLlmWithRetry(List<Map<String, String>> messages, int tokens, double temp, int retriesLeft) {
         try {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("model", model);
@@ -301,11 +328,24 @@ public class LlmService {
             Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
             return cleanResponse((String) message.get("content"));
         } catch (WebClientResponseException e) {
+            if (e.getStatusCode().value() == 429 && retriesLeft > 0) {
+                log.warn("Groq 429 — retry через 2 сек");
+                sleepQuietly(2000);
+                return callLlmWithRetry(messages, tokens, temp, retriesLeft - 1);
+            }
             log.error("Ошибка {} {}: {}", provider, e.getStatusCode(), e.getResponseBodyAsString());
             return mapLlmError(e);
         } catch (Exception e) {
             log.error("Ошибка {}: {}", provider, e.getMessage());
             return "Не удалось связаться с " + provider + ". Проверь GROQ_API_KEY и интернет.";
+        }
+    }
+
+    private static void sleepQuietly(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -334,7 +374,7 @@ public class LlmService {
         return switch (status) {
             case 401 -> "Неверный ключ. Проверь " + keyHint + ".";
             case 403 -> "Доступ запрещён (403). Проверь лимиты провайдера.";
-            case 429 -> "Лимит запросов исчерпан. Подожди минуту (Groq free tier).";
+            case 429 -> "⚠️ Groq занят (лимит). Подожди 30 сек и нажми снова.";
             case 404 -> "Модель %s не найдена. Проверь LLM_MODEL.".formatted(model);
             default -> provider + " вернул ошибку %d. Смотри логи сервера.".formatted(status);
         };

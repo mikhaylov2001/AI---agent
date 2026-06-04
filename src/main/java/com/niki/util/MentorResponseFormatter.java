@@ -6,12 +6,10 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Приводит ответ LLM к единому чистому формату для Telegram.
- */
 public final class MentorResponseFormatter {
 
     private static final Pattern FLUFF_START = Pattern.compile(
@@ -20,6 +18,11 @@ public final class MentorResponseFormatter {
 
     private static final Pattern HEADER_LINE = Pattern.compile(
             "^(?:([📍⚠️▶️💡📊✅])\\s*)?\\*?([^*\\n:]+?)\\*?\\s*:?\\s*(.*)$");
+
+    private static final Set<String> HEADER_NAMES_ONLY = Set.of(
+            "контекст", "вижу", "зона роста", "проблема", "сейчас", "шаг",
+            "запомнил", "память", "чек-ин", "проверка"
+    );
 
     private static final Map<String, String> HEADER_ALIASES = Map.ofEntries(
             Map.entry("вижу", "Контекст"),
@@ -49,10 +52,31 @@ public final class MentorResponseFormatter {
     private MentorResponseFormatter() {
     }
 
+    /** Не трогать ошибки и системные сообщения — иначе ломается текст. */
+    public static boolean shouldSkipFormatting(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return true;
+        }
+        String lower = raw.toLowerCase();
+        return lower.contains("лимит запросов")
+                || lower.contains("groq_api")
+                || lower.contains("не настроен")
+                || lower.contains("не удалось")
+                || lower.contains("пустой ответ")
+                || lower.contains("неверный ключ")
+                || lower.contains("ошибк")
+                || lower.contains("console.groq.com")
+                || lower.startsWith("⚠️");
+    }
+
     public static String format(String raw, ChatIntent intent) {
         if (raw == null || raw.isBlank()) {
             return raw;
         }
+        if (shouldSkipFormatting(raw)) {
+            return sanitizePlain(raw);
+        }
+
         String text = stripFluff(normalizeWhitespace(raw.trim()));
 
         if (intent == ChatIntent.NEXT_STEP) {
@@ -60,8 +84,8 @@ public final class MentorResponseFormatter {
         }
 
         List<Block> blocks = parseBlocks(text);
-        if (blocks.isEmpty()) {
-            return wrapFallback(text, intent);
+        if (blocks.isEmpty() || !hasValidContent(blocks)) {
+            return plainStructuredFallback(text, intent);
         }
         return renderBlocks(blocks, intent);
     }
@@ -102,6 +126,11 @@ public final class MentorResponseFormatter {
         return mergeDuplicateTitles(blocks);
     }
 
+    private static boolean hasValidContent(List<Block> blocks) {
+        return blocks.stream().anyMatch(b -> b.body().length() >= 8
+                && !HEADER_NAMES_ONLY.contains(b.body().toLowerCase().trim()));
+    }
+
     private static Block parseParagraph(String paragraph) {
         if (paragraph.isBlank()) {
             return null;
@@ -115,7 +144,7 @@ public final class MentorResponseFormatter {
         String inlineBody = m.group(3) != null ? m.group(3).trim() : "";
         String body = !inlineBody.isBlank() ? inlineBody
                 : (lines.length > 1 ? lines[1].trim() : "");
-        if (body.isBlank()) {
+        if (!isValidBody(body, title)) {
             return null;
         }
         return new Block(title, body.replaceAll("\\s+", " ").trim());
@@ -125,12 +154,9 @@ public final class MentorResponseFormatter {
         if (line.isBlank()) {
             return null;
         }
-        String emoji = null;
         String rest = line.trim();
-        for (Map.Entry<String, String> e : HEADER_EMOJI.entrySet()) {
-            String icon = e.getValue();
+        for (String icon : HEADER_EMOJI.values()) {
             if (rest.startsWith(icon)) {
-                emoji = icon;
                 rest = rest.substring(icon.length()).trim();
                 break;
             }
@@ -144,17 +170,18 @@ public final class MentorResponseFormatter {
         }
         String title = normalizeTitle(m.group(1));
         String body = m.group(2).trim();
-        if (body.isBlank()) {
+        if (!isValidBody(body, title)) {
             return null;
-        }
-        if (emoji != null && !title.equals(normalizeTitle(stripEmojiLabel(rest)))) {
-            // title from *bold* takes precedence
         }
         return new Block(title, body);
     }
 
-    private static String stripEmojiLabel(String s) {
-        return s.replaceAll("^\\*([^*]+)\\*.*", "$1");
+    private static boolean isValidBody(String body, String title) {
+        if (body.isBlank() || body.length() < 8) {
+            return false;
+        }
+        String b = body.toLowerCase().trim();
+        return !HEADER_NAMES_ONLY.contains(b) && !b.equals(title.toLowerCase());
     }
 
     private static List<Block> mergeDuplicateTitles(List<Block> blocks) {
@@ -190,10 +217,10 @@ public final class MentorResponseFormatter {
     private static String renderBlocks(List<Block> blocks, ChatIntent intent) {
         StringBuilder sb = new StringBuilder();
         for (Block block : blocks) {
-            if (shouldSkip(block, intent)) {
+            if (shouldSkip(block, intent) || !isValidBody(block.body(), block.title())) {
                 continue;
             }
-            String emoji = HEADER_EMOJI.getOrDefault(block.title(), "•");
+            String emoji = HEADER_EMOJI.getOrDefault(block.title(), "▶️");
             if (!sb.isEmpty()) {
                 sb.append("\n\n");
             }
@@ -204,14 +231,11 @@ public final class MentorResponseFormatter {
         if (result.length() > 900) {
             result = result.substring(0, 897) + "…";
         }
-        return result.isEmpty() ? wrapFallback("", intent) : result;
+        return result.isEmpty() ? plainStructuredFallback("", intent) : result;
     }
 
     private static boolean shouldSkip(Block block, ChatIntent intent) {
-        if (intent == ChatIntent.CHECK_IN && "Контекст".equals(block.title())) {
-            return true;
-        }
-        return false;
+        return intent == ChatIntent.CHECK_IN && "Контекст".equals(block.title());
     }
 
     private static String formatMinimal(String text) {
@@ -220,27 +244,43 @@ public final class MentorResponseFormatter {
                 .filter(b -> "Сейчас".equals(b.title()))
                 .map(Block::body)
                 .findFirst()
-                .orElseGet(() -> {
-                    if (!blocks.isEmpty()) {
-                        return blocks.get(blocks.size() - 1).body();
-                    }
-                    return text.replaceAll("(?i)^▶️\\s*", "").trim();
-                });
-        if (body.isBlank()) {
-            body = "Напиши, над чем работаем — дам один шаг.";
+                .orElseGet(() -> blocks.stream()
+                        .filter(b -> isValidBody(b.body(), b.title()))
+                        .map(Block::body)
+                        .findFirst()
+                        .orElse(text.replaceAll("(?i)^▶️\\s*", "").trim()));
+
+        if (body.isBlank() || body.length() < 8) {
+            body = "25 мин · один шаг по Java backend — напиши что сделал.";
         }
         return "▶️ *Сейчас*\n" + body.trim();
     }
 
-    private static String wrapFallback(String text, ChatIntent intent) {
+    private static String plainStructuredFallback(String text, ChatIntent intent) {
         if (text.isBlank()) {
-            return "▶️ *Сейчас*\nНапиши, над чем работаем — дам один конкретный шаг.";
+            return "▶️ *Сейчас*\nНапиши, над чем работаем — дам один шаг.";
         }
+        String clean = sanitizePlain(text);
         return switch (intent) {
-            case CHECK_IN -> "📊 *Чек-ин*\nЭнергия 1–10? Что мешает?\n\n▶️ *Сейчас*\n" + firstLine(text);
-            case MEMORY -> "💡 *Запомнил*\n" + text;
-            default -> "📍 *Контекст*\n" + firstLine(text) + "\n\n▶️ *Сейчас*\nУточни задачу — дам один шаг.";
+            case CHECK_IN -> "📊 *Чек-ин*\nЭнергия 1–10? Что мешает?\n\n▶️ *Сейчас*\n" + firstLine(clean);
+            case NEXT_STEP -> "▶️ *Сейчас*\n" + firstLine(clean);
+            case MEMORY -> "💡 *Запомнил*\n" + clean;
+            default -> clean.length() > 200
+                    ? "▶️ *Сейчас*\n" + firstLine(clean)
+                    : clean;
         };
+    }
+
+    /** Убирает сломанные asterisk — причину «К онтекст» в Telegram. */
+    public static String sanitizePlain(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text
+                .replaceAll("\\*{2,}", "")
+                .replaceAll("(?<!\\*)\\*(?!\\*)", "")
+                .replaceAll("\\s+", " ")
+                .trim();
     }
 
     private static String firstLine(String text) {

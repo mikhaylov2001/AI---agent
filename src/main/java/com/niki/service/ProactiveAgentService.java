@@ -55,7 +55,7 @@ public class ProactiveAgentService {
         runForProactiveUsers(user -> {
             String text = llmService.proactiveBrief(user, goalService.getActiveGoals(user.getTelegramId()),
                     "Чек-ин: спроси энергию 1-10, один шаг до вечера.");
-            send(user.getTelegramId(), "📊 *Чек-ин*\n\n" + text);
+            send(user.getTelegramId(), "📊 *Чек-ин*\nЭнергия 1–10? Что мешает?\n\n" + text);
         });
     }
 
@@ -205,9 +205,18 @@ public class ProactiveAgentService {
         for (User user : userRepository.findByProactiveEnabledTrue()) {
             try {
                 action.accept(user);
+                sleepBetweenUsers();
             } catch (Exception e) {
                 log.error("Proactive для {}: {}", user.getTelegramId(), e.getMessage());
             }
+        }
+    }
+
+    private static void sleepBetweenUsers() {
+        try {
+            Thread.sleep(2500);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         }
     }
 

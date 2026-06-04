@@ -14,7 +14,6 @@ public final class TelegramHtml {
                 .replace(">", "&gt;");
     }
 
-    /** Конвертирует *bold* и _italic_ в HTML; сохраняет переносы строк. */
     public static String markdownToHtml(String text) {
         if (text == null) {
             return "";
@@ -32,9 +31,11 @@ public final class TelegramHtml {
 
     private static String formatLine(String line) {
         String escaped = escape(line);
-        escaped = escaped.replaceAll("\\*([^*]+)\\*", "<b>$1</b>");
-        escaped = escaped.replaceAll("_([^_]+)_", "<i>$1</i>");
-        escaped = escaped.replaceAll("`([^`]+)`", "<code>$1</code>");
+        // Только пары *слово* длиной ≥2 — иначе «*К*онтекст» ломает Telegram
+        escaped = escaped.replaceAll("\\*([^*\\s][^*\\n]{1,}?)\\*", "<b>$1</b>");
+        escaped = escaped.replaceAll("_([^_\\s][^_\\n]{1,}?)_", "<i>$1</i>");
+        escaped = escaped.replaceAll("`([^`\\n]+)`", "<code>$1</code>");
+        escaped = escaped.replace("*", "");
         return escaped;
     }
 
