@@ -19,6 +19,7 @@ import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMa
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor
@@ -38,6 +39,7 @@ public class CommandHandler {
     private final JobApplicationService jobApplicationService;
     private final UserMaterialIngestService userMaterialIngestService;
     private final TelegramFileService telegramFileService;
+    private final JobConversationHandler jobConversationHandler;
 
     public BotResponse handle(Message message) {
         User user = userService.getOrCreateUser(message);
@@ -88,6 +90,11 @@ public class CommandHandler {
 
         if (normalized.startsWith("/") || isMenuButton(text)) {
             return handleCommand(normalized, user);
+        }
+
+        Optional<BotResponse> jobReply = jobConversationHandler.tryHandle(user, text);
+        if (jobReply.isPresent()) {
+            return jobReply.get();
         }
 
         List<Goal> goals = goalService.getActiveGoals(user.getTelegramId());

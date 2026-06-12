@@ -76,6 +76,9 @@ public final class TelegramHtml {
         if (line.contains(PLACEHOLDER_PREFIX)) {
             return line;
         }
+        if (line.isBlank()) {
+            return "";
+        }
         String escaped = escape(line);
         escaped = escaped.replaceAll("\\*([^*\\s][^*\\n]{1,}?)\\*", "<b>$1</b>");
         escaped = escaped.replaceAll("_([^_\\s][^_\\n]{1,}?)_", "<i>$1</i>");

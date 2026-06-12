@@ -27,6 +27,7 @@ public class LlmService {
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
     private final MentorProfileService mentorProfileService;
+    private final ConversationFocusService conversationFocusService;
 
     @Value("${llm.provider:claude}")
     private String provider;
@@ -59,12 +60,14 @@ public class LlmService {
                       WebClient anthropicWebClient,
                       ChatMessageRepository chatMessageRepository,
                       UserRepository userRepository,
-                      MentorProfileService mentorProfileService) {
+                      MentorProfileService mentorProfileService,
+                      ConversationFocusService conversationFocusService) {
         this.llmWebClient = llmWebClient;
         this.anthropicWebClient = anthropicWebClient;
         this.chatMessageRepository = chatMessageRepository;
         this.userRepository = userRepository;
         this.mentorProfileService = mentorProfileService;
+        this.conversationFocusService = conversationFocusService;
     }
 
     private boolean isClaude() {
@@ -82,15 +85,17 @@ public class LlmService {
 
     @Transactional
     public String proactiveBrief(User user, List<Goal> goals, String task) {
-        String fallback = staticProactiveMessage(task, goals);
+        String fallback = staticProactiveMessage(task, goals, user);
         if (!StringUtils.hasText(effectiveApiKey())) {
             return fallback;
         }
         mentorProfileService.ensureDefaultProfile(user);
+        ConversationFocusService.ResolvedFocus focus =
+                conversationFocusService.resolve(user, task, ChatIntent.NEXT_STEP);
         List<Map<String, String>> messages = List.of(
-                Map.of("role", "system", "content", buildSystemPrompt(user, goals, ChatIntent.NEXT_STEP)),
+                Map.of("role", "system", "content", buildSystemPrompt(user, goals, ChatIntent.NEXT_STEP, focus)),
                 Map.of("role", "user", "content",
-                        "[АВТОПИЛОТ] " + task + "\n\nОтвет СТРОГО в формате:\n▶️ *Сейчас*\nN мин · задача · результат")
+                        "[АВТОПИЛОТ] " + task + "\n\nОтвет СТРОГО в формате:\n▶️ *Сейчас*\nодно конкретное действие")
         );
         String llm = callLlm(messages, proactiveMaxTokens, 0.3);
         if (MentorResponseFormatter.shouldSkipFormatting(llm)) {
@@ -100,25 +105,37 @@ public class LlmService {
         return formatted.contains("Сейчас") ? formatted : fallback;
     }
 
-    private static String staticProactiveMessage(String task, List<Goal> goals) {
-        String goal = goals.isEmpty() ? "Java backend" : goals.get(0).getTitle();
+    private String staticProactiveMessage(String task, List<Goal> goals, User user) {
+        ConversationFocusService.ResolvedFocus focus =
+                conversationFocusService.resolve(user, task, ChatIntent.NEXT_STEP);
+        String goal = conversationFocusService.primaryGoalTitle(goals, focus);
         String lower = task.toLowerCase();
         if (lower.contains("чек-ин") || lower.contains("чек")) {
-            return "▶️ *Сейчас*\n20 мин · один шаг по «" + goal + "»";
+            return "▶️ *Сейчас*\nОдин шаг по «" + goal + "» — напиши, что сделал.";
         }
         if (lower.contains("вечер")) {
-            return "▶️ *Сейчас*\nИтог дня + завтра: 25 мин · «" + goal + "»";
+            return "▶️ *Сейчас*\nИтог дня + один шаг на завтра по «" + goal + "».";
         }
-        return "▶️ *Сейчас*\n25 мин · «" + goal + "» · один конкретный action";
+        return "▶️ *Сейчас*\nОдин конкретный шаг по «" + goal + "».";
     }
 
     @Transactional
     public String chat(User user, String userText, List<Goal> goals) {
-        return chat(user, userText, goals, ChatIntent.DEFAULT);
+        ConversationFocusService.ResolvedFocus focus =
+                conversationFocusService.resolve(user, userText, ChatIntent.DEFAULT);
+        return chat(user, userText, goals, focus.intent(), focus);
     }
 
     @Transactional
     public String chat(User user, String userText, List<Goal> goals, ChatIntent intent) {
+        ConversationFocusService.ResolvedFocus focus =
+                conversationFocusService.resolve(user, userText, intent);
+        return chat(user, userText, goals, intent, focus);
+    }
+
+    @Transactional
+    public String chat(User user, String userText, List<Goal> goals, ChatIntent intent,
+                       ConversationFocusService.ResolvedFocus focus) {
         if (!StringUtils.hasText(effectiveApiKey())) {
             return isClaude()
                     ? """
@@ -133,12 +150,13 @@ public class LlmService {
         mentorProfileService.ensureDefaultProfile(user);
         String effectiveText = wrapIntent(userText, intent);
         saveMessage(user, "user", effectiveText);
-        List<Map<String, String>> messages = buildMessages(user, effectiveText, goals, intent);
+        List<Map<String, String>> messages = buildMessages(user, effectiveText, goals, intent, focus);
         int tokens = tokensForIntent(intent);
         String llm = callLlm(messages, tokens, temperature);
         String reply = MentorResponseFormatter.shouldSkipFormatting(llm)
                 ? llm
                 : MentorResponseFormatter.format(llm, intent);
+        reply = guardReply(focus, intent, userText, reply);
         saveMessage(user, "assistant", reply);
         trimHistory(user.getTelegramId());
         updateMemorySummaryIfNeeded(user);
@@ -166,9 +184,11 @@ public class LlmService {
                 .orElse("Письмо не найдено. Сначала используй /apply [ссылка]");
     }
 
-    private List<Map<String, String>> buildMessages(User user, String userText, List<Goal> goals, ChatIntent intent) {
+    private List<Map<String, String>> buildMessages(User user, String userText, List<Goal> goals,
+                                                    ChatIntent intent,
+                                                    ConversationFocusService.ResolvedFocus focus) {
         List<Map<String, String>> messages = new ArrayList<>();
-        messages.add(Map.of("role", "system", "content", buildSystemPrompt(user, goals, intent)));
+        messages.add(Map.of("role", "system", "content", buildSystemPrompt(user, goals, intent, focus)));
         List<ChatMessage> history = chatMessageRepository
                 .findByUserTelegramIdOrderByCreatedAtAsc(user.getTelegramId(), PageRequest.of(0, 15));
         for (int i = 0; i < history.size() - 1; i++) {
@@ -181,8 +201,10 @@ public class LlmService {
         return messages;
     }
 
-    private String buildSystemPrompt(User user, List<Goal> goals, ChatIntent intent) {
+    private String buildSystemPrompt(User user, List<Goal> goals, ChatIntent intent,
+                                     ConversationFocusService.ResolvedFocus focus) {
         StringBuilder p = new StringBuilder(mentorProfileService.loadMentorInstructions());
+        p.append(conversationFocusService.buildPromptSection(focus));
         p.append("\n\nИмя пользователя: ").append(user.getFirstName()).append("\n");
         p.append("Провайдер ИИ: ").append(provider).append(" (").append(effectiveModel()).append(").\n");
         p.append("""
@@ -204,16 +226,22 @@ public class LlmService {
                     .append(user.getMemorySummary()).append("\n");
         }
 
-        if (!goals.isEmpty()) {
-            p.append("\n--- АКТИВНЫЕ ЦЕЛИ (из бота) ---\n");
+        if (!goals.isEmpty() && (focus == null || "general".equals(focus.topicId()))) {
+            p.append("\n--- АКТИВНЫЕ ЦЕЛИ (справочно, не смешивай с текущей темой) ---\n");
             for (Goal g : goals) {
                 p.append(String.format("- %s (прогресс: %d%%, категория: %s)\n",
                         g.getTitle(), g.getProgress(), g.getCategory()));
             }
         }
 
+        p.append("""
+
+                ПОСЛЕДНЕЕ СООБЩЕНИЕ ПОЛЬЗОВАТЕЛЯ — главный сигнал. Не выдумывай, что он писал.
+                Mock-собес (HashMap, Spring, «вопрос 1») — только по кнопке «Собес» или явной просьбе.
+                """);
+
         if (intent == ChatIntent.NEXT_STEP) {
-            p.append("\nРЕЖИМ: только блок ▶️ *Сейчас*, формат «N мин · задача · результат».\n");
+            p.append("\nРЕЖИМ: только блок ▶️ *Сейчас* — одно действие, без выдуманного «N мин».\n");
         } else if (intent == ChatIntent.CHECK_IN) {
             p.append("\nРЕЖИМ: 📊 *Чек-ин* (энергия 1–10?) + ▶️ *Сейчас*. Макс. 5 строк.\n");
         } else if (intent == ChatIntent.LEARNING) {
@@ -225,6 +253,57 @@ public class LlmService {
         }
 
         return p.toString();
+    }
+
+    private String guardReply(ConversationFocusService.ResolvedFocus focus, ChatIntent intent,
+                              String userText, String reply) {
+        if (reply == null || reply.isBlank() || focus == null) {
+            return reply;
+        }
+        if (!"jobs".equals(focus.topicId()) && intent != ChatIntent.INTERVIEW) {
+            return reply;
+        }
+        if (intent == ChatIntent.INTERVIEW) {
+            return reply;
+        }
+        String lower = reply.toLowerCase(Locale.ROOT);
+        if (looksLikeInterviewDerail(lower)) {
+            return """
+                    📍 *Контекст*
+
+                    Продолжаем вакансии — не ухожу в собес.
+
+                    ▶️ *Сейчас*
+
+                    Напиши «открой сам» или нажми 💼 *Вакансии* — пришлю подборку с кнопками отклика на HH.""";
+        }
+        if (looksLikeHallucinatedPercent(userText, lower)) {
+            return """
+                    📍 *Контекст*
+
+                    Ты прав — я напутал с контекстом. Остаёмся на вакансиях.
+
+                    ▶️ *Сейчас*
+
+                    Напиши «открой сам» — поищу Junior/Middle на HH и дам кнопки отклика.""";
+        }
+        return reply;
+    }
+
+    private static boolean looksLikeInterviewDerail(String lower) {
+        return lower.contains("вопрос 1")
+                || lower.contains("hashmap")
+                || lower.contains("concurrenthashmap")
+                || lower.contains("как на реальном собесе")
+                || lower.contains("mock-собес")
+                || lower.contains("mock собес");
+    }
+
+    private static boolean looksLikeHallucinatedPercent(String userText, String replyLower) {
+        if (userText == null || !replyLower.contains("30%")) {
+            return false;
+        }
+        return !userText.contains("30");
     }
 
     private int tokensForIntent(ChatIntent intent) {
@@ -411,6 +490,7 @@ public class LlmService {
         chatMessageRepository.deleteAllByUserTelegramId(user.getTelegramId());
         user.setMemorySummary(null);
         userRepository.save(user);
+        conversationFocusService.clearFocus(user);
         log.info("Память сброшена для {}", user.getTelegramId());
     }
 

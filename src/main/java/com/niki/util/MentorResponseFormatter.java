@@ -16,9 +16,6 @@ public final class MentorResponseFormatter {
             "(?is)^\\s*(конечно|отличный вопрос|хороший вопрос|давай разбер[её]м|рад помочь)[,!.:—\\-]*\\s*",
             Pattern.UNICODE_CASE);
 
-    private static final Pattern HEADER_LINE = Pattern.compile(
-            "^(?:([📍⚠️▶️💡📊✅])\\s*)?\\*?([^*\\n:]+?)\\*?\\s*:?\\s*(.*)$");
-
     private static final Set<String> HEADER_NAMES_ONLY = Set.of(
             "контекст", "вижу", "зона роста", "проблема", "сейчас", "шаг",
             "запомнил", "память", "чек-ин", "проверка"
@@ -79,20 +76,32 @@ public final class MentorResponseFormatter {
 
         String text = stripFluff(normalizeWhitespace(raw.trim()));
 
-        // Обычный диалог — не перестраиваем, иначе «Дима» → ▶️ *Д* + «има…»
-        if (intent == ChatIntent.DEFAULT) {
-            return sanitizePlain(text);
-        }
-
         if (intent == ChatIntent.NEXT_STEP) {
-            return formatMinimal(text);
+            return stripFakeTimers(formatMinimal(text));
         }
 
         List<Block> blocks = parseBlocks(text);
-        if (blocks.isEmpty() || !hasValidContent(blocks)) {
-            return plainStructuredFallback(text, intent);
+        if (!blocks.isEmpty() && hasValidContent(blocks)) {
+            return renderBlocks(blocks, intent);
         }
-        return renderBlocks(blocks, intent);
+
+        // Обычный диалог без блоков — не парсим заголовки, иначе «Дима» → ▶️ *Д*
+        if (intent == ChatIntent.DEFAULT) {
+            return stripFakeTimers(sanitizePlain(text));
+        }
+
+        return stripFakeTimers(plainStructuredFallback(text, intent));
+    }
+
+    /** Убирает «N мин ·» из всего ответа — модель всё ещё иногда вставляет таймеры. */
+    static String stripFakeTimers(String text) {
+        if (text == null || text.isBlank()) {
+            return text;
+        }
+        return text
+                .replaceAll("(?i)\\d+\\s*мин(?:ут(?:ы)?)?\\s*[·\\-–—:]\\s*", "")
+                .replaceAll("(?i)(?<=▶️\\s*\\*?Сейчас\\*?\\s*)\\d+\\s*мин(?:ут(?:ы)?)?\\s*", "")
+                .trim();
     }
 
     private static String stripFluff(String text) {
@@ -110,6 +119,32 @@ public final class MentorResponseFormatter {
                 .replaceAll("[ \\t]+\\n", "\n")
                 .replaceAll("\\n{3,}", "\n\n")
                 .trim();
+    }
+
+    private static HeaderParts parseHeaderLine(String line) {
+        if (line == null || line.isBlank()) {
+            return null;
+        }
+        String rest = line.trim();
+        for (String icon : HEADER_EMOJI.values()) {
+            if (rest.startsWith(icon)) {
+                rest = rest.substring(icon.length()).trim();
+                break;
+            }
+        }
+        Matcher bold = Pattern.compile("^\\*([^*\\n]+)\\*(?:\\s*:)?\\s*(.*)$").matcher(rest);
+        if (bold.matches()) {
+            return new HeaderParts(normalizeTitle(bold.group(1)), bold.group(2).trim());
+        }
+        Matcher colon = Pattern.compile("^([^:\\n]+?)\\s*:\\s*(.*)$").matcher(rest);
+        if (colon.matches()) {
+            return new HeaderParts(normalizeTitle(colon.group(1)), colon.group(2).trim());
+        }
+        String plain = rest.replaceAll("^\\*+|\\*+$", "").trim();
+        if (!plain.isBlank()) {
+            return new HeaderParts(normalizeTitle(plain), "");
+        }
+        return null;
     }
 
     private static List<Block> parseBlocks(String text) {
@@ -145,50 +180,31 @@ public final class MentorResponseFormatter {
         if (!looksLikeHeaderLine(firstLine)) {
             return null;
         }
-        Matcher m = HEADER_LINE.matcher(firstLine);
-        if (!m.matches()) {
+        HeaderParts header = parseHeaderLine(firstLine);
+        if (header == null || !isKnownCanonicalTitle(header.title())) {
             return null;
         }
-        String title = normalizeTitle(m.group(2));
-        if (!isKnownCanonicalTitle(title)) {
-            return null;
-        }
-        String inlineBody = m.group(3) != null ? m.group(3).trim() : "";
-        String body = !inlineBody.isBlank() ? inlineBody
+        String body = !header.inlineBody().isBlank() ? header.inlineBody()
                 : (lines.length > 1 ? lines[1].trim() : "");
-        if (!isValidBody(body, title)) {
+        if (!isValidBody(body, header.title())) {
             return null;
         }
-        return new Block(title, body.replaceAll("\\s+", " ").trim());
+        return new Block(header.title(), body.replaceAll("\\s+", " ").trim());
     }
 
     private static Block parseLineBlock(String line) {
         if (line.isBlank()) {
             return null;
         }
-        String rest = line.trim();
-        for (String icon : HEADER_EMOJI.values()) {
-            if (rest.startsWith(icon)) {
-                rest = rest.substring(icon.length()).trim();
-                break;
-            }
-        }
-        Matcher m = Pattern.compile("^\\*([^*\\n]+)\\*(?:\\s*:)?\\s*(.+)$").matcher(rest);
-        if (!m.matches()) {
-            m = Pattern.compile("^([^:\\n]+?)\\s*:\\s*(.+)$").matcher(rest);
-            if (!m.matches()) {
-                return null;
-            }
-        }
-        String title = normalizeTitle(m.group(1));
-        if (!isKnownCanonicalTitle(title)) {
+        HeaderParts header = parseHeaderLine(line.trim());
+        if (header == null || !isKnownCanonicalTitle(header.title())) {
             return null;
         }
-        String body = m.group(2).trim();
-        if (!isValidBody(body, title)) {
+        String body = header.inlineBody();
+        if (!isValidBody(body, header.title())) {
             return null;
         }
-        return new Block(title, body);
+        return new Block(header.title(), body);
     }
 
     private static boolean looksLikeHeaderLine(String line) {
@@ -272,13 +288,14 @@ public final class MentorResponseFormatter {
             if (!sb.isEmpty()) {
                 sb.append("\n\n");
             }
-            sb.append(emoji).append(" *").append(block.title()).append("*\n");
-            sb.append(block.body());
+            sb.append(emoji).append(" *").append(block.title()).append("*\n\n");
+            sb.append(cleanBlockBody(block.title(), block.body()));
         }
         String result = sb.toString().trim();
         if (result.length() > 900) {
             result = result.substring(0, 897) + "…";
         }
+        result = stripFakeTimers(result);
         return result.isEmpty() ? plainStructuredFallback("", intent) : result;
     }
 
@@ -299,9 +316,22 @@ public final class MentorResponseFormatter {
                         .orElse(text.replaceAll("(?i)^▶️\\s*", "").trim()));
 
         if (body.isBlank() || body.length() < 8) {
-            body = "25 мин · один шаг по Java backend — напиши что сделал.";
+            body = "Один шаг по Java backend — напиши, что сделал.";
         }
-        return "▶️ *Сейчас*\n" + body.trim();
+        return "▶️ *Сейчас*\n" + cleanBlockBody("Сейчас", body.trim());
+    }
+
+    /** Убираем выдуманные «N мин ·» — пользователь не просил таймер. */
+    private static String cleanBlockBody(String title, String body) {
+        if (body == null || body.isBlank()) {
+            return body;
+        }
+        String cleaned = body.trim();
+        if ("Сейчас".equals(title)) {
+            cleaned = cleaned.replaceFirst("(?i)^\\d+\\s*мин(?:ут(?:ы)?)?\\s*[·\\-–—:]\\s*", "");
+            cleaned = cleaned.replaceFirst("(?i)^⏰\\s*", "");
+        }
+        return cleaned.trim();
     }
 
     private static String plainStructuredFallback(String text, ChatIntent intent) {
@@ -319,16 +349,22 @@ public final class MentorResponseFormatter {
         };
     }
 
-    /** Убирает сломанные asterisk — причину «К онтекст» в Telegram. */
+    /** Убирает сломанные asterisk; переносы строк сохраняем. */
     public static String sanitizePlain(String text) {
         if (text == null) {
             return "";
         }
-        return text
-                .replaceAll("\\*{2,}", "")
-                .replaceAll("(?<!\\*)\\*(?!\\*)", "")
-                .replaceAll("\\s+", " ")
-                .trim();
+        StringBuilder sb = new StringBuilder();
+        for (String line : text.replaceAll("\\*{2,}", "").split("\n", -1)) {
+            String cleaned = line.replaceAll("(?<!\\*)\\*(?!\\*)", "")
+                    .replaceAll("[ \\t]+", " ")
+                    .trim();
+            if (sb.length() > 0) {
+                sb.append('\n');
+            }
+            sb.append(cleaned);
+        }
+        return sb.toString().replaceAll("\\n{3,}", "\n\n").trim();
     }
 
     private static String firstLine(String text) {
@@ -337,5 +373,8 @@ public final class MentorResponseFormatter {
     }
 
     private record Block(String title, String body) {
+    }
+
+    private record HeaderParts(String title, String inlineBody) {
     }
 }
