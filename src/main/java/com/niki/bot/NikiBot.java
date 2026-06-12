@@ -12,6 +12,7 @@ import org.springframework.stereotype.Component;
 import org.telegram.telegrambots.bots.TelegramLongPollingBot;
 import org.telegram.telegrambots.meta.api.methods.AnswerCallbackQuery;
 import org.telegram.telegrambots.meta.api.methods.commands.SetMyCommands;
+import org.telegram.telegrambots.meta.api.methods.send.SendChatAction;
 import org.telegram.telegrambots.meta.api.methods.send.SendMessage;
 import org.telegram.telegrambots.meta.api.objects.Update;
 import org.telegram.telegrambots.meta.api.objects.commands.BotCommand;
@@ -99,6 +100,9 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
                 return;
             }
             log.info("Сообщение от {}: {}", message.getFrom().getId(), message.getText());
+            if (needsTypingIndicator(message.getText())) {
+                sendTyping(message.getChatId());
+            }
             sendResponse(message.getChatId(), commandHandler.handle(message));
         } catch (Exception e) {
             log.error("Ошибка обработки update: {}", e.getMessage(), e);
@@ -117,6 +121,31 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
             return update.getCallbackQuery().getMessage().getChatId();
         }
         return null;
+    }
+
+    private void sendTyping(Long chatId) {
+        try {
+            execute(SendChatAction.builder()
+                    .chatId(chatId.toString())
+                    .action("typing")
+                    .build());
+        } catch (TelegramApiException e) {
+            log.debug("typing: {}", e.getMessage());
+        }
+    }
+
+    private boolean needsTypingIndicator(String text) {
+        if (text == null) {
+            return false;
+        }
+        String t = text.trim();
+        return !t.equals(TelegramKeyboards.BTN_PROFILE)
+                && !t.equals(TelegramKeyboards.BTN_GOALS)
+                && !t.equals(TelegramKeyboards.BTN_HELP)
+                && !t.equals(TelegramKeyboards.BTN_JOBS)
+                && !t.equals(TelegramKeyboards.BTN_APPLICATIONS)
+                && !t.equals(TelegramKeyboards.BTN_CONNECT_HH)
+                && !t.startsWith("/");
     }
 
     private void sendPlain(Long chatId, String text) {
@@ -159,6 +188,7 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
                         .build());
             } catch (TelegramApiException e2) {
                 log.error("Ошибка отправки в {}: {}", chatId, e2.getMessage());
+                sendPlain(chatId, "Не удалось отправить ответ. Нажми /start или повтори.");
             }
         }
     }

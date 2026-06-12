@@ -1,6 +1,6 @@
 package com.niki.controller;
 
-import com.niki.bot.NikiBot;
+import com.niki.service.TelegramUpdateDispatcher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,7 +20,7 @@ import org.telegram.telegrambots.meta.api.objects.Update;
 @ConditionalOnProperty(name = "telegram.delivery-mode", havingValue = "webhook", matchIfMissing = true)
 public class TelegramWebhookController {
 
-    private final NikiBot nikiBot;
+    private final TelegramUpdateDispatcher updateDispatcher;
 
     @Value("${telegram.webhook.secret-token:}")
     private String secretToken;
@@ -32,6 +32,6 @@ public class TelegramWebhookController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "invalid webhook secret");
         }
         log.info("Webhook update id={}", update.getUpdateId());
-        nikiBot.onUpdateReceived(update);
+        updateDispatcher.dispatch(update);
     }
 }

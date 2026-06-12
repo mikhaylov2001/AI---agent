@@ -1,6 +1,7 @@
 package com.niki.config;
 
 import com.niki.bot.NikiBot;
+import com.niki.service.TelegramUpdateDispatcher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -26,6 +27,7 @@ import java.util.List;
 public class TelegramUpdatePoller {
 
     private final NikiBot nikiBot;
+    private final TelegramUpdateDispatcher updateDispatcher;
     private volatile int offset;
 
     @EventListener(ApplicationReadyEvent.class)
@@ -51,7 +53,7 @@ public class TelegramUpdatePoller {
                 return;
             }
             for (Update update : updates) {
-                nikiBot.onUpdateReceived(update);
+                updateDispatcher.dispatch(update);
                 offset = update.getUpdateId() + 1;
             }
             log.info("Обработано сообщений: {}", updates.size());

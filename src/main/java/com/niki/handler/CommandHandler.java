@@ -47,6 +47,11 @@ public class CommandHandler {
         String text = message.getText().trim();
         String normalized = normalizeInput(text);
 
+        // Кнопки меню и команды — сразу, не ждём LLM/HH
+        if (normalized.startsWith("/") || isMenuButton(text)) {
+            return handleCommand(normalized, user);
+        }
+
         BotResponse profileStep = handleProfileSetup(user, text, normalized);
         if (profileStep != null) {
             return profileStep;
@@ -86,10 +91,6 @@ public class CommandHandler {
                 return handleCommand(normalized, user);
             }
             return applyToVacancy(user, text);
-        }
-
-        if (normalized.startsWith("/") || isMenuButton(text)) {
-            return handleCommand(normalized, user);
         }
 
         Optional<BotResponse> jobReply = jobConversationHandler.tryHandle(user, text);
@@ -185,9 +186,16 @@ public class CommandHandler {
         return switch (cmd) {
             case "/start", "/main_menu", "/mainmenu" -> startMessage(user);
             case "/help", "/помощь" -> helpMessage();
-            case "/profile", "/profil" -> BotResponse.withInlineAndMenu(
-                    mentorProfileService.formatProfileForDisplay(user),
-                    TelegramKeyboards.profileActions());
+            case "/profile", "/profil" -> {
+                try {
+                    yield BotResponse.withInlineAndMenu(
+                            mentorProfileService.formatProfileForDisplay(user),
+                            TelegramKeyboards.profileActions());
+                } catch (Exception e) {
+                    log.error("Profile display failed: {}", e.getMessage(), e);
+                    yield BotResponse.withMainMenu("🧠 *Профиль*\n\nНе удалось загрузить. Попробуй /start или «📝 Настроить профиль».");
+                }
+            }
             case "/setup_profile", "/setupprofile" -> {
                 startProfileSetup(user);
                 yield BotResponse.withMainMenu(mentorProfileService.profileSetupQuestion(1));

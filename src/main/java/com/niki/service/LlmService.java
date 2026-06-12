@@ -15,6 +15,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import java.time.Duration;
 import java.util.*;
 import java.util.Locale;
 
@@ -159,8 +160,25 @@ public class LlmService {
         reply = guardReply(focus, intent, userText, reply);
         saveMessage(user, "assistant", reply);
         trimHistory(user.getTelegramId());
-        updateMemorySummaryIfNeeded(user);
+        scheduleMemorySummaryUpdate(user);
         return reply;
+    }
+
+    private void scheduleMemorySummaryUpdate(User user) {
+        long telegramId = user.getTelegramId();
+        long total = chatMessageRepository.countByUserTelegramId(telegramId);
+        if (total % 50 != 0 || !StringUtils.hasText(effectiveApiKey())) {
+            return;
+        }
+        Thread t = new Thread(() -> {
+            try {
+                userRepository.findByTelegramId(telegramId).ifPresent(this::updateMemorySummarySync);
+            } catch (Exception e) {
+                log.warn("Фоновое обновление памяти: {}", e.getMessage());
+            }
+        }, "memory-summary-" + telegramId);
+        t.setDaemon(true);
+        t.start();
     }
 
     private String wrapIntent(String userText, ChatIntent intent) {
@@ -427,7 +445,7 @@ public class LlmService {
                     .bodyValue(body)
                     .retrieve()
                     .bodyToMono(Map.class)
-                    .block();
+                    .block(Duration.ofSeconds(55));
             if (response == null) {
                 return "Пустой ответ от " + provider + ".";
             }
@@ -444,6 +462,9 @@ public class LlmService {
             return mapLlmError(e);
         } catch (Exception e) {
             log.error("Ошибка {}: {}", provider, e.getMessage());
+            if (e.getClass().getSimpleName().contains("Timeout") || e.getMessage() != null && e.getMessage().contains("Timeout")) {
+                return "⚠️ ИИ долго думает — нажми кнопку ещё раз или /start.";
+            }
             String keyHint = isClaude() ? "CLAUDE_API_KEY" : "GROQ_API_KEY";
             return "Не удалось связаться с " + provider + ". Проверь " + keyHint + " и интернет.";
         }
@@ -474,7 +495,7 @@ public class LlmService {
                 .bodyValue(body)
                 .retrieve()
                 .bodyToMono(Map.class)
-                .block();
+                .block(Duration.ofSeconds(55));
         if (response == null) {
             return "Пустой ответ от Claude.";
         }
@@ -618,7 +639,7 @@ public class LlmService {
                     .bodyValue(body)
                     .retrieve()
                     .bodyToMono(Map.class)
-                    .block();
+                    .block(Duration.ofSeconds(55));
             if (response == null) {
                 return "";
             }
@@ -657,7 +678,7 @@ public class LlmService {
                     .bodyValue(body)
                     .retrieve()
                     .bodyToMono(Map.class)
-                    .block();
+                    .block(Duration.ofSeconds(55));
             if (response == null) {
                 return "";
             }
@@ -705,11 +726,7 @@ public class LlmService {
     }
 
     @SuppressWarnings("unchecked")
-    private void updateMemorySummaryIfNeeded(User user) {
-        long totalMessages = chatMessageRepository.countByUserTelegramId(user.getTelegramId());
-        if (totalMessages % 50 != 0 || !StringUtils.hasText(effectiveApiKey())) {
-            return;
-        }
+    private void updateMemorySummarySync(User user) {
         log.info("Обновляю долгосрочную память для {}", user.getFirstName());
         List<ChatMessage> recent = chatMessageRepository
                 .findByUserTelegramIdOrderByCreatedAtAsc(user.getTelegramId(), PageRequest.of(0, 50));
