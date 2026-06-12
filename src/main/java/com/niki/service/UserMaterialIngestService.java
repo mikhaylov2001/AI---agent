@@ -1,6 +1,7 @@
 package com.niki.service;
 
 import com.niki.model.User;
+import com.niki.util.ImageNormalizer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.pdfbox.Loader;
@@ -33,25 +34,42 @@ public class UserMaterialIngestService {
         String fileName = document.getFileName() != null ? document.getFileName() : "файл";
         String mime = document.getMimeType() != null ? document.getMimeType() : "";
         byte[] bytes = telegramFileService.downloadDocument(bot, document);
+
+        if (ImageNormalizer.isImage(fileName, mime)) {
+            String imageMime = ImageNormalizer.resolveMime(fileName, mime);
+            String text = llmService.extractTextFromImage(bytes, imageMime, caption);
+            if (!StringUtils.hasText(text)) {
+                return imageReadFailedMessage();
+            }
+            return saveMaterial(user, fileName, caption, text);
+        }
+
         String text = extractText(bytes, fileName, mime);
         if (!StringUtils.hasText(text)) {
             return "❌ Не смог прочитать *" + escapeMd(fileName) + "*.\n"
-                    + "Пришли `.txt`, `.md` или текстовый `.pdf`.";
+                    + "Пришли `.txt`, `.md`, PDF или скрин (PNG/JPG).";
         }
         return saveMaterial(user, fileName, caption, text);
     }
 
     @Transactional
     public String ingestPhoto(User user, byte[] imageBytes, String mimeType, String caption) {
-        String label = StringUtils.hasText(caption) ? caption : "фото";
+        String label = StringUtils.hasText(caption) ? caption : "скриншот";
         String ocr = llmService.extractTextFromImage(imageBytes, mimeType, caption);
         if (!StringUtils.hasText(ocr)) {
-            return """
-                    📷 Картинку получил, но текст не распознал.
-                    
-                    Пришли те же данные текстом или PDF — сохраню в профиль.""";
+            return imageReadFailedMessage();
         }
         return saveMaterial(user, label, caption, ocr);
+    }
+
+    private static String imageReadFailedMessage() {
+        return """
+                📷 Скрин получил, но распознать не смог.
+                
+                Проверь на Render:
+                • `CLAUDE_API_KEY` или `GROQ_API_KEY`
+                
+                Или пришли текстом / PDF — сохраню в профиль.""";
     }
 
     private String saveMaterial(User user, String fileName, String caption, String rawText) {

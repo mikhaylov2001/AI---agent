@@ -52,6 +52,9 @@ public class LlmService {
     @Value("${llm.anthropic.model:claude-sonnet-4-6}")
     private String anthropicModel;
 
+    @Value("${llm.vision.groq-model:llama-3.2-11b-vision-preview}")
+    private String groqVisionModel;
+
     public LlmService(WebClient llmWebClient,
                       WebClient anthropicWebClient,
                       ChatMessageRepository chatMessageRepository,
@@ -486,22 +489,31 @@ public class LlmService {
         if (imageBytes == null || imageBytes.length == 0) {
             return caption != null ? caption : "";
         }
-        String base64 = Base64.getEncoder().encodeToString(imageBytes);
-        String mediaType = StringUtils.hasText(mimeType) ? mimeType : "image/jpeg";
-        String userText = StringUtils.hasText(caption)
-                ? "Подпись: " + caption + "\n\nИзвлеки весь текст с картинки (цифры, проценты, подписи). Только факты."
-                : "Извлеки весь текст с картинки (цифры, проценты, подписи). Только факты.";
+        var normalized = com.niki.util.ImageNormalizer.normalize(imageBytes, mimeType);
+        String base64 = Base64.getEncoder().encodeToString(normalized.bytes());
+        String mediaType = normalized.mimeType();
+        String userText = """
+                Это скриншот или фото от пользователя. Извлеки ВСЁ содержимое:
+                - все заголовки и подписи
+                - все числа и проценты (особенно если это тест личности / СВП)
+                - таблицы и списки — построчно
+                
+                %s
+                
+                Ответ только фактами, без комментариев.""".formatted(
+                StringUtils.hasText(caption) ? "Подпись пользователя: " + caption : "Подписи нет."
+        );
 
-        if (StringUtils.hasText(apiKey)) {
-            String groq = extractWithGroqVision(base64, mediaType, userText);
-            if (StringUtils.hasText(groq)) {
-                return groq;
-            }
-        }
         if (StringUtils.hasText(anthropicKey)) {
             String claude = extractWithClaudeVision(base64, mediaType, userText);
             if (StringUtils.hasText(claude)) {
                 return claude;
+            }
+        }
+        if (StringUtils.hasText(apiKey)) {
+            String groq = extractWithGroqVision(base64, mediaType, userText);
+            if (StringUtils.hasText(groq)) {
+                return groq;
             }
         }
         return caption != null ? caption : "";
@@ -516,9 +528,9 @@ public class LlmService {
                     Map.of("type", "image_url", "image_url", Map.of("url", dataUrl))
             );
             Map<String, Object> body = new LinkedHashMap<>();
-            body.put("model", "llama-3.2-90b-vision-preview");
+            body.put("model", groqVisionModel);
             body.put("messages", List.of(Map.of("role", "user", "content", content)));
-            body.put("max_tokens", 500);
+            body.put("max_tokens", 800);
             body.put("temperature", 0.1);
 
             Map<String, Object> response = llmWebClient.post()
@@ -532,7 +544,10 @@ public class LlmService {
             }
             List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
             Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-            return cleanResponse((String) message.get("content"));
+            return cleanVisionText((String) message.get("content"));
+        } catch (WebClientResponseException e) {
+            log.warn("Groq vision failed {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
+            return "";
         } catch (Exception e) {
             log.warn("Groq vision failed: {}", e.getMessage());
             return "";
@@ -544,7 +559,7 @@ public class LlmService {
         try {
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("model", anthropicModel);
-            body.put("max_tokens", 500);
+            body.put("max_tokens", 800);
             body.put("messages", List.of(Map.of(
                     "role", "user",
                     "content", List.of(
@@ -567,11 +582,24 @@ public class LlmService {
                 return "";
             }
             List<Map<String, Object>> content = (List<Map<String, Object>>) response.get("content");
-            return cleanResponse((String) content.get(0).get("text"));
+            return cleanVisionText((String) content.get(0).get("text"));
+        } catch (WebClientResponseException e) {
+            log.warn("Claude vision failed {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
+            return "";
         } catch (Exception e) {
             log.warn("Claude vision failed: {}", e.getMessage());
             return "";
         }
+    }
+
+    /** OCR/vision — не обрезаем так агрессивно, как ответы в чат. */
+    private static String cleanVisionText(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.replaceAll("\\[\\d+\\]", "")
+                .replaceAll("\\n{3,}", "\n\n")
+                .trim();
     }
 
     private static String truncate(String text, int max) {
