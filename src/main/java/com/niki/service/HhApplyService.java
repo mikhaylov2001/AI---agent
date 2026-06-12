@@ -16,6 +16,9 @@ import java.util.*;
 @Slf4j
 public class HhApplyService {
 
+    public static final String MSG_NOT_CONNECTED = "❌ HH не подключён. Напиши /connect\\_hh";
+    public static final String MSG_SESSION_EXPIRED = "❌ HH-сессия истекла. Нажми /connect\\_hh — подключишь за минуту.";
+
     private final HhOAuthService hhOAuthService;
     private final UserRepository userRepository;
     private final WebClient hhApiWebClient;
@@ -31,10 +34,15 @@ public class HhApplyService {
     @SuppressWarnings("unchecked")
     public String getMyResumes(User user) {
         if (!hhOAuthService.isConnected(user)) {
-            return "❌ HH не подключён. Напиши /connect_hh";
+            return MSG_NOT_CONNECTED;
         }
-        String token = hhOAuthService.getValidToken(user);
+        return fetchMyResumesText(user, false);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String fetchMyResumesText(User user, boolean retriedAfter401) {
         try {
+            String token = hhOAuthService.getValidToken(user);
             Map<String, Object> response = hhApiWebClient.get()
                     .uri("/resumes/mine")
                     .header("Authorization", "Bearer " + token)
@@ -52,10 +60,21 @@ public class HhApplyService {
             }
             sb.append("Нажми кнопку под сообщением или: /use\\_resume [ID]");
             return sb.toString();
+        } catch (HhAuthException e) {
+            log.warn("getMyResumes auth: {}", e.getMessage());
+            return MSG_SESSION_EXPIRED;
         } catch (WebClientResponseException e) {
             log.error("Ошибка резюме {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
+            if ((e.getStatusCode().value() == 401 || e.getStatusCode().value() == 403) && !retriedAfter401) {
+                try {
+                    hhOAuthService.forceRefreshAccessToken(user);
+                    return fetchMyResumesText(user, true);
+                } catch (HhAuthException refreshError) {
+                    return MSG_SESSION_EXPIRED;
+                }
+            }
             if (e.getStatusCode().value() == 401 || e.getStatusCode().value() == 403) {
-                return "❌ HH-токен устарел. Напиши /connect\\_hh и подключи заново.";
+                return MSG_SESSION_EXPIRED;
             }
             return "Ошибка HH (" + e.getStatusCode().value() + "). Попробуй /connect\\_hh";
         } catch (Exception e) {
@@ -69,6 +88,11 @@ public class HhApplyService {
         if (!hhOAuthService.isConnected(user)) {
             return List.of();
         }
+        return fetchResumeList(user, false);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, String>> fetchResumeList(User user, boolean retriedAfter401) {
         try {
             String token = hhOAuthService.getValidToken(user);
             Map<String, Object> response = hhApiWebClient.get()
@@ -89,10 +113,27 @@ public class HhApplyService {
                 ));
             }
             return result;
+        } catch (HhAuthException e) {
+            return List.of();
+        } catch (WebClientResponseException e) {
+            if ((e.getStatusCode().value() == 401 || e.getStatusCode().value() == 403) && !retriedAfter401) {
+                try {
+                    hhOAuthService.forceRefreshAccessToken(user);
+                    return fetchResumeList(user, true);
+                } catch (HhAuthException ignored) {
+                    return List.of();
+                }
+            }
+            log.error("listResumes {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
+            return List.of();
         } catch (Exception e) {
             log.error("listResumes: {}", e.getMessage());
             return List.of();
         }
+    }
+
+    public boolean needsReconnect(String message) {
+        return MSG_NOT_CONNECTED.equals(message) || MSG_SESSION_EXPIRED.equals(message);
     }
 
     @Transactional
@@ -167,15 +208,19 @@ public class HhApplyService {
     }
 
     public String applyToVacancy(User user, String vacancyIdOrUrl, String coverLetter) {
+        return applyToVacancy(user, vacancyIdOrUrl, coverLetter, false);
+    }
+
+    private String applyToVacancy(User user, String vacancyIdOrUrl, String coverLetter, boolean retriedAfter401) {
         if (!hhOAuthService.isConnected(user)) {
-            return "❌ HH не подключён. Напиши /connect_hh";
+            return MSG_NOT_CONNECTED;
         }
         if (user.getHhResumeId() == null) {
             return "❌ Выбери резюме: /hh\\_resumes";
         }
         String vacancyId = extractVacancyId(vacancyIdOrUrl);
-        String token = hhOAuthService.getValidToken(user);
         try {
+            String token = hhOAuthService.getValidToken(user);
             Map<String, String> body = new HashMap<>();
             body.put("vacancy_id", vacancyId);
             body.put("resume_id", user.getHhResumeId());
@@ -186,10 +231,23 @@ public class HhApplyService {
                     .bodyValue(body).retrieve().toBodilessEntity().block();
             log.info("Отклик отправлен: user={}, vacancy={}", user.getTelegramId(), vacancyId);
             return "✅ *Отклик отправлен!*\n\nУдачи 🍀 Напиши как пройдёт — помогу подготовиться.";
+        } catch (HhAuthException e) {
+            return MSG_SESSION_EXPIRED;
         } catch (WebClientResponseException e) {
             log.error("Ошибка отклика {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
+            if (e.getStatusCode().value() == 401 && !retriedAfter401) {
+                try {
+                    hhOAuthService.forceRefreshAccessToken(user);
+                    return applyToVacancy(user, vacancyIdOrUrl, coverLetter, true);
+                } catch (HhAuthException refreshError) {
+                    return MSG_SESSION_EXPIRED;
+                }
+            }
             if (e.getStatusCode().value() == 403) {
                 return "❌ Ты уже откликался на эту вакансию или нет доступа.";
+            }
+            if (e.getStatusCode().value() == 401) {
+                return MSG_SESSION_EXPIRED;
             }
             return "❌ Ошибка HH: " + e.getStatusCode().value();
         } catch (Exception e) {

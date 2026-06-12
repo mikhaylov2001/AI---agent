@@ -14,9 +14,20 @@ final class JobTextPatterns {
     private JobTextPatterns() {
     }
 
+    /** Запрос списка резюме — не путать с поиском вакансий. */
+    static boolean isResumeListRequest(String lower) {
+        if (lower.equals("резюме") || lower.equals("📄 резюме")) {
+            return true;
+        }
+        return containsAny(lower, "мои резюме", "список резюме", "hh_resumes", "hh resumes");
+    }
+
     static boolean isJobRelated(String lower) {
+        if (isResumeListRequest(lower)) {
+            return false;
+        }
         if (containsAny(lower,
-                "ваканс", "hh", "headhunter", "отклик", "резюме", "head hunter",
+                "ваканс", "hh", "headhunter", "отклик", "head hunter",
                 "джуниор", "junior", "мидл", "middle", "мидла", "hh.ru",
                 "python backend", "backend developer", "java developer", "java backend",
                 "java разработ", "разработчик java", "работа java", "ищу работу")) {

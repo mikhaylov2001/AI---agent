@@ -7,6 +7,13 @@ import static org.junit.jupiter.api.Assertions.*;
 class JobTextPatternsTest {
 
     @Test
+    void resumeListRequestIsNotJobSearch() {
+        String lower = JobTextPatterns.normalize("Резюме");
+        assertTrue(JobTextPatterns.isResumeListRequest(lower));
+        assertFalse(JobTextPatterns.isJobRelated(lower));
+    }
+
+    @Test
     void detectsJavaDeveloperTypo() {
         assertTrue(JobTextPatterns.isJobRelated("java develover"));
     }

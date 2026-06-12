@@ -374,11 +374,24 @@ public class CommandHandler {
 
     private BotResponse hhResumesResponse(User user) {
         String text = hhApplyService.getMyResumes(user);
+        if (hhApplyService.needsReconnect(text)) {
+            return reconnectHhResponse(user, text);
+        }
         List<Map<String, String>> resumes = hhApplyService.listResumes(user);
         if (resumes.isEmpty()) {
             return BotResponse.withCareerMenu(text);
         }
         return BotResponse.withInlineAndMenu(text, TelegramKeyboards.resumePicker(resumes));
+    }
+
+    private BotResponse reconnectHhResponse(User user, String prefix) {
+        String url = hhOAuthService.buildTelegramConnectUrl(user.getTelegramId());
+        if (url.startsWith("HH_CLIENT")) {
+            return BotResponse.withCareerMenu(prefix);
+        }
+        return BotResponse.withCareerMenuAndInline(
+                prefix + "\n\n_Подключи HH одной кнопкой:_",
+                TelegramKeyboards.urlButton("🔐 Переподключить HH.ru", url));
     }
 
     private BotResponse handleFilterCallback(User user, String data) {
@@ -686,7 +699,7 @@ public class CommandHandler {
         if (text.equals(TelegramKeyboards.BTN_GOALS)) return "/goals";
         if (text.equals(TelegramKeyboards.BTN_JOBS)) return "/jobs";
         if (text.equals(TelegramKeyboards.BTN_CONNECT_HH)) return "/connect_hh";
-        if (text.equals(TelegramKeyboards.BTN_RESUMES)) return "/hh_resumes";
+        if (text.equals(TelegramKeyboards.BTN_RESUMES) || isResumeNav(text)) return "/hh_resumes";
         if (text.equals(TelegramKeyboards.BTN_HELP)) return "/help";
         if (text.equals(TelegramKeyboards.BTN_PROFILE)) return "/profile";
         if (text.equals(TelegramKeyboards.BTN_NEXT_STEP)) return "/next_step";
@@ -722,6 +735,7 @@ public class CommandHandler {
                 || text.equals(TelegramKeyboards.BTN_JOBS)
                 || text.equals(TelegramKeyboards.BTN_CONNECT_HH)
                 || text.equals(TelegramKeyboards.BTN_RESUMES)
+                || isResumeNav(text)
                 || text.equals(TelegramKeyboards.BTN_HELP)
                 || text.equals(TelegramKeyboards.BTN_PROFILE)
                 || text.equals(TelegramKeyboards.BTN_NEXT_STEP)
@@ -731,6 +745,14 @@ public class CommandHandler {
                 || text.equals(TelegramKeyboards.BTN_APPLICATIONS)
                 || text.equals(TelegramKeyboards.BTN_INTERVIEW)
                 || text.equals("◀️ Главное меню");
+    }
+
+    private static boolean isResumeNav(String text) {
+        String lower = text.trim().toLowerCase(Locale.ROOT);
+        return lower.equals("резюме")
+                || lower.equals("📄 резюме")
+                || lower.contains("мои резюме")
+                || lower.contains("список резюме");
     }
 
     private static int profileStepFromState(UserSessionService.State state) {
