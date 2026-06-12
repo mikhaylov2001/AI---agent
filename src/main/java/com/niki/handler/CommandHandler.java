@@ -462,10 +462,10 @@ public class CommandHandler {
             return BotResponse.withCareerMenu(
                     "⚠️ HH не настроен на сервере.\nДобавь HH\\_CLIENT\\_ID и HH\\_CLIENT\\_SECRET.");
         }
-        return BotResponse.withCareerMenu(
+        return BotResponse.withCareerMenuAndInline(
                 "🔗 *Подключение HH.ru*\n\n" +
-                        "1. Нажми ссылку\n2. Войди в HH\n3. Вернись в Telegram\n\n" +
-                        "[Авторизоваться](" + url + ")");
+                        "1. Нажми кнопку ниже\n2. Войди в HH\n3. Вернись в Telegram",
+                TelegramKeyboards.urlButton("🔐 Авторизоваться на HH.ru", url));
     }
 
     private BotResponse searchJobs(User user, String query) {

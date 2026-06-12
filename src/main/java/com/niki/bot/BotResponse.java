@@ -21,6 +21,10 @@ public record BotResponse(
         return new BotResponse(text, TelegramKeyboards.careerMenu(), null, true);
     }
 
+    public static BotResponse withCareerMenuAndInline(String text, InlineKeyboardMarkup inline) {
+        return new BotResponse(text, TelegramKeyboards.careerMenu(), inline, true);
+    }
+
     /** Inline + нижнее меню остаётся от предыдущих ответов. */
     public static BotResponse withInlineAndMenu(String text, InlineKeyboardMarkup inline) {
         return new BotResponse(text, TelegramKeyboards.mainMenu(), inline, true);

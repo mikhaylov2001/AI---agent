@@ -180,4 +180,12 @@ public final class TelegramKeyboards {
                 .callbackData(callbackData)
                 .build();
     }
+
+    public static InlineKeyboardMarkup urlButton(String label, String url) {
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
+        markup.setKeyboard(List.of(List.of(
+                InlineKeyboardButton.builder().text(label).url(url).build()
+        )));
+        return markup;
+    }
 }
