@@ -49,7 +49,7 @@ public class LlmService {
     @Value("${llm.anthropic.key:}")
     private String anthropicKey;
 
-    @Value("${llm.anthropic.model:claude-sonnet-4-20250514}")
+    @Value("${llm.anthropic.model:claude-sonnet-4-6}")
     private String anthropicModel;
 
     public LlmService(WebClient llmWebClient,

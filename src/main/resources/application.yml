@@ -44,7 +44,7 @@ llm:
     proactive-max-tokens: ${LLM_PROACTIVE_MAX_TOKENS:220}
   anthropic:
     key: ${CLAUDE_API_KEY:}
-    model: ${CLAUDE_MODEL:claude-sonnet-4-20250514}
+    model: ${CLAUDE_MODEL:claude-sonnet-4-6}
 
 hh:
   client:
