@@ -504,14 +504,15 @@ public class CommandHandler {
     }
 
     private BotResponse connectHh(User user) {
-        String url = hhOAuthService.buildAuthUrl(user.getTelegramId());
+        String url = hhOAuthService.buildTelegramConnectUrl(user.getTelegramId());
         if (url.startsWith("HH_CLIENT")) {
             return BotResponse.withCareerMenu(
                     "⚠️ HH не настроен на сервере.\nДобавь HH\\_CLIENT\\_ID и HH\\_CLIENT\\_SECRET.");
         }
         return BotResponse.withCareerMenuAndInline(
                 "🔗 *Подключение HH.ru*\n\n" +
-                        "1. Нажми кнопку ниже\n2. Войди в HH\n3. Вернись в Telegram",
+                        "1. Нажми кнопку *ниже* (не старые сообщения)\n" +
+                        "2. Войди в HH\n3. Вернись в Telegram",
                 TelegramKeyboards.urlButton("🔐 Авторизоваться на HH.ru", url));
     }
 

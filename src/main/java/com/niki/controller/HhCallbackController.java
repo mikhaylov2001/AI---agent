@@ -6,6 +6,7 @@ import com.niki.service.NikiMessageSender;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.view.RedirectView;
 
 @RestController
 @RequestMapping("/hh")
@@ -16,6 +17,13 @@ public class HhCallbackController {
     private final HhOAuthService hhOAuthService;
     private final HhOAuthStateService stateService;
     private final NikiMessageSender messageSender;
+
+  /** Прокси для Telegram: кнопка без underscore → редирект на hh.ru с правильными параметрами. */
+    @GetMapping("/authorize")
+    public RedirectView authorize(@RequestParam("s") String state) {
+        stateService.decode(state);
+        return new RedirectView(hhOAuthService.buildHhAuthorizeUrlWithState(state));
+    }
 
     @GetMapping("/callback")
     public String callback(@RequestParam String code, @RequestParam String state) {

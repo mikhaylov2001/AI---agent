@@ -39,15 +39,39 @@ public class HhOAuthService {
     @Value("${hh.redirect.uri}")
     private String redirectUri;
 
-    public String buildAuthUrl(Long telegramId) {
+    @Value("${telegram.webhook.public-url:}")
+    private String publicBaseUrl;
+
+    /** Ссылка для кнопки в Telegram — через наш /hh/authorize (без _ в URL). */
+    public String buildTelegramConnectUrl(Long telegramId) {
         if (!StringUtils.hasText(clientId)) {
             return "HH_CLIENT_ID не настроен. Зарегистрируй приложение на dev.hh.ru.";
         }
         String state = stateService.encode(telegramId);
-        String encodedRedirect = URLEncoder.encode(redirectUri, StandardCharsets.UTF_8);
-        return String.format(
-                "https://hh.ru/oauth/authorize?response_type=code&client_id=%s&redirect_uri=%s&state=%s",
-                clientId, encodedRedirect, state);
+        if (!StringUtils.hasText(publicBaseUrl)) {
+            return buildHhAuthorizeUrlWithState(state);
+        }
+        String base = publicBaseUrl.endsWith("/")
+                ? publicBaseUrl.substring(0, publicBaseUrl.length() - 1)
+                : publicBaseUrl;
+        return base + "/hh/authorize?s="
+                + URLEncoder.encode(state, StandardCharsets.UTF_8);
+    }
+
+    /** Прямой URL на hh.ru — %5F вместо _ в именах параметров. */
+    public String buildHhAuthorizeUrlWithState(String state) {
+        if (!StringUtils.hasText(clientId)) {
+            throw new IllegalStateException("HH_CLIENT_ID не настроен");
+        }
+        return "https://hh.ru/oauth/authorize"
+                + "?response%5Ftype=code"
+                + "&client%5Fid=" + URLEncoder.encode(clientId, StandardCharsets.UTF_8)
+                + "&redirect_uri=" + URLEncoder.encode(redirectUri, StandardCharsets.UTF_8)
+                + "&state=" + URLEncoder.encode(state, StandardCharsets.UTF_8);
+    }
+
+    public String buildHhAuthorizeUrl(Long telegramId) {
+        return buildHhAuthorizeUrlWithState(stateService.encode(telegramId));
     }
 
     @Transactional
