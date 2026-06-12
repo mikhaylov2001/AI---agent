@@ -45,6 +45,13 @@ public class GoalService {
     }
 
     @Transactional
+    public Goal updateProgressForUser(Long telegramId, Long goalId, int progress) {
+        Goal goal = goalRepository.findByIdAndUserTelegramId(goalId, telegramId)
+                .orElseThrow(() -> new IllegalArgumentException("Цель не найдена"));
+        return updateProgress(goal.getId(), progress);
+    }
+
+    @Transactional
     public Goal updateProgress(Long goalId, int progress) {
         Goal goal = goalRepository.findById(goalId)
                 .orElseThrow(() -> new RuntimeException("Цель не найдена: " + goalId));
@@ -58,21 +65,26 @@ public class GoalService {
 
     public String formatGoalsForUser(List<Goal> goals) {
         if (goals.isEmpty()) {
-            return "У тебя пока нет активных целей.\nНапиши /addgoal чтобы добавить первую.";
+            return """
+                    🎯 *Мои цели*
+                    
+                    Пока пусто — добавь первую цель кнопкой ниже 👇""";
         }
-        StringBuilder sb = new StringBuilder("🎯 *Твои активные цели:*\n\n");
+        StringBuilder sb = new StringBuilder("🎯 *Мои цели*\n\n");
         for (int i = 0; i < goals.size(); i++) {
             Goal g = goals.get(i);
             String emoji = getCategoryEmoji(g.getCategory());
-            String bar = "█".repeat(g.getProgress() / 10) + "░".repeat(10 - g.getProgress() / 10);
-            sb.append(String.format("%d. %s *%s*\n   %s %d%%\n\n",
-                    i + 1, emoji, g.getTitle(), bar, g.getProgress()));
+            sb.append("*").append(i + 1).append(".* ").append(emoji).append(" ").append(g.getTitle()).append("\n");
+            sb.append(progressLine(g.getProgress())).append("\n\n");
         }
-        return sb.toString();
+        sb.append("_Обновить прогресс — кнопки под сообщением_");
+        return sb.toString().trim();
     }
 
-    public String formatGoalsWithProgressHint(List<Goal> goals) {
-        return formatGoalsForUser(goals) + "\n_Прогресс:_ /progress [номер] [0-100]\nПример: /progress 1 40";
+    public static String progressLine(int percent) {
+        int p = Math.min(100, Math.max(0, percent));
+        int filled = Math.min(5, p * 5 / 100);
+        return "🟩".repeat(filled) + "⬜".repeat(5 - filled) + "  *" + p + "%*";
     }
 
     private String getCategoryEmoji(GoalCategory category) {

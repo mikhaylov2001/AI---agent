@@ -53,8 +53,7 @@ public class CommandHandler {
                 return handleCommand(normalized, user);
             }
             Goal goal = goalService.addGoal(user, text, GoalCategory.CAREER);
-            return BotResponse.withMainMenu(
-                    "✅ Цель добавлена: *" + goal.getTitle() + "*\n\nЧто мешало достичь её раньше?");
+            return goalsResponse(user, "✅ Цель добавлена: *" + goal.getTitle() + "*");
         }
         if (state == UserSessionService.State.AWAITING_JOB_QUERY) {
             sessionService.clear(user.getTelegramId());
@@ -110,6 +109,20 @@ public class CommandHandler {
         if (data.startsWith("autopilot:")) {
             return handleAutopilotCallback(user, data.substring(10));
         }
+        if ("goals".equals(data)) {
+            return goalsResponse(user, null);
+        }
+        if ("addgoal".equals(data)) {
+            sessionService.setState(user.getTelegramId(), UserSessionService.State.AWAITING_GOAL_TITLE);
+            return BotResponse.withMainMenu(
+                    "✍️ Напиши *одним сообщением*, какую цель добавить.\n\n_Пример:_ Пройти 3 собеса");
+        }
+        if (data.startsWith("goalpick:")) {
+            return goalPickProgress(user, Long.parseLong(data.substring(9)));
+        }
+        if (data.startsWith("progress:")) {
+            return applyGoalProgress(user, data.substring(9));
+        }
         return handleCommand("/" + data, user);
     }
 
@@ -132,7 +145,7 @@ public class CommandHandler {
             case "/learning", "/study" -> mentorChat(user, "Помоги с учёбой.", ChatIntent.LEARNING);
             case "/interview" -> mentorChat(user, StringUtils.hasText(args) ? args : "Подготовь меня к собеседованию Java backend.", ChatIntent.INTERVIEW);
             case "/memory" -> mentorChat(user, "", ChatIntent.MEMORY);
-            case "/цели", "/goals" -> BotResponse.withMainMenu(formatGoalsMessage(user));
+            case "/цели", "/goals" -> goalsResponse(user, null);
             case "/сброс", "/сбросить", "/reset" -> {
                 llmService.clearConversationMemory(user);
                 yield BotResponse.withMainMenu(
@@ -146,7 +159,7 @@ public class CommandHandler {
                             "✍️ Напиши *одним сообщением*, какую цель добавить.\n\nПример: _Пройти 3 собеса_");
                 }
                 Goal goal = goalService.addGoal(user, args, GoalCategory.CAREER);
-                yield BotResponse.withMainMenu("✅ Цель добавлена: *" + goal.getTitle() + "*");
+                yield goalsResponse(user, "✅ Цель добавлена: *" + goal.getTitle() + "*");
             }
             case "/jobs" -> {
                 if (args.isBlank()) {
@@ -206,20 +219,63 @@ public class CommandHandler {
 
     private BotResponse handleProgress(User user, String args) {
         if (args.isBlank()) {
-            return BotResponse.withMainMenu(goalService.formatGoalsWithProgressHint(
-                    goalService.getActiveGoals(user.getTelegramId())));
+            return goalsResponse(user, null);
         }
         String[] parts = args.split("\\s+");
         if (parts.length < 2) {
-            return BotResponse.withMainMenu("Формат: /progress [номер] [0-100]\nПример: /progress 1 40");
+            return goalsResponse(user, "Формат: /progress 1 40 — или кнопки под 🎯 Цели");
         }
         try {
             int index = Integer.parseInt(parts[0]);
             int progress = Integer.parseInt(parts[1]);
             Goal goal = goalService.updateProgressByIndex(user.getTelegramId(), index, progress);
-            return BotResponse.withMainMenu(String.format("✅ Цель *%s* — прогресс *%d%%*", goal.getTitle(), goal.getProgress()));
+            return goalsResponse(user, "✅ *" + goal.getTitle() + "* → " + goal.getProgress() + "%");
         } catch (Exception e) {
             return BotResponse.withMainMenu("❌ " + e.getMessage());
+        }
+    }
+
+    private BotResponse goalsResponse(User user, String prefix) {
+        List<Goal> goals = goalService.getActiveGoals(user.getTelegramId());
+        String body = goalService.formatGoalsForUser(goals);
+        if (StringUtils.hasText(prefix)) {
+            body = prefix + "\n\n" + body;
+        }
+        if (goals.isEmpty()) {
+            body = body + "\n\n" + mentorProfileService.formatCoreGoals();
+            return BotResponse.withInlineAndMenu(body, TelegramKeyboards.goalsEmptyActions());
+        }
+        return BotResponse.withInlineAndMenu(body, TelegramKeyboards.goalProgressPicker(goals));
+    }
+
+    private BotResponse goalPickProgress(User user, Long goalId) {
+        Goal goal = goalService.getActiveGoals(user.getTelegramId()).stream()
+                .filter(g -> g.getId().equals(goalId))
+                .findFirst()
+                .orElse(null);
+        if (goal == null) {
+            return goalsResponse(user, "❌ Цель не найдена");
+        }
+        String text = "📈 *" + goal.getTitle() + "*\n\nСейчас: " + GoalService.progressLine(goal.getProgress())
+                + "\n\nВыбери новый прогресс:";
+        return BotResponse.withInlineAndMenu(text, TelegramKeyboards.goalSetProgress(goalId));
+    }
+
+    private BotResponse applyGoalProgress(User user, String payload) {
+        String[] parts = payload.split(":");
+        if (parts.length < 2) {
+            return goalsResponse(user, "❌ Ошибка кнопки");
+        }
+        try {
+            long goalId = Long.parseLong(parts[0]);
+            int progress = Integer.parseInt(parts[1]);
+            Goal goal = goalService.updateProgressForUser(user.getTelegramId(), goalId, progress);
+            String note = goal.getProgress() == 100
+                    ? "🎉 *" + goal.getTitle() + "* — готово!"
+                    : "✅ *" + goal.getTitle() + "* → " + goal.getProgress() + "%";
+            return goalsResponse(user, note);
+        } catch (Exception e) {
+            return goalsResponse(user, "❌ " + e.getMessage());
         }
     }
 
@@ -421,15 +477,6 @@ public class CommandHandler {
                 TelegramKeyboards.startInlineMenu(), true);
     }
 
-    private String formatGoalsMessage(User user) {
-        String tracked = goalService.formatGoalsWithProgressHint(
-                goalService.getActiveGoals(user.getTelegramId()));
-        if (tracked.contains("нет активных")) {
-            return mentorProfileService.formatCoreGoals();
-        }
-        return mentorProfileService.formatCoreGoals() + "\n\n*В боте:*\n" + tracked;
-    }
-
     private BotResponse helpMessage() {
         return BotResponse.withMainMenu("""
                 📖 *Навигация Ники*
@@ -446,7 +493,7 @@ public class CommandHandler {
                 *HH.ru:*
                 /connect\\_hh → /hh\\_resumes → кнопка «Откликнуться»
                 /applications — история откликов
-                /progress 1 40 — прогресс цели
+                🎯 Цели — кнопки для прогресса (0–100%)
                 /area 1 — регион HH (1=Москва, пусто=вся РФ)
                 """);
     }

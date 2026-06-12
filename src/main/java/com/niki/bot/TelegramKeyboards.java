@@ -1,5 +1,6 @@
 package com.niki.bot;
 
+import com.niki.model.Goal;
 import com.niki.service.HhService;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.InlineKeyboardMarkup;
 import org.telegram.telegrambots.meta.api.objects.replykeyboard.ReplyKeyboardMarkup;
@@ -179,6 +180,51 @@ public final class TelegramKeyboards {
                 .text(text)
                 .callbackData(callbackData)
                 .build();
+    }
+
+    public static InlineKeyboardMarkup goalProgressPicker(List<Goal> goals) {
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
+        List<List<InlineKeyboardButton>> rows = new ArrayList<>();
+        for (Goal g : goals) {
+            String label = truncate(g.getTitle(), 24);
+            rows.add(List.of(inlineButton("📈 " + label, "goalpick:" + g.getId())));
+        }
+        rows.add(List.of(inlineButton("➕ Добавить цель", "addgoal")));
+        markup.setKeyboard(rows);
+        return markup;
+    }
+
+    public static InlineKeyboardMarkup goalSetProgress(Long goalId) {
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
+        markup.setKeyboard(List.of(
+                List.of(
+                        inlineButton("0%", "progress:" + goalId + ":0"),
+                        inlineButton("25%", "progress:" + goalId + ":25"),
+                        inlineButton("50%", "progress:" + goalId + ":50")
+                ),
+                List.of(
+                        inlineButton("75%", "progress:" + goalId + ":75"),
+                        inlineButton("✅ 100%", "progress:" + goalId + ":100")
+                ),
+                List.of(inlineButton("◀️ К целям", "goals"))
+        ));
+        return markup;
+    }
+
+    public static InlineKeyboardMarkup goalsEmptyActions() {
+        InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
+        markup.setKeyboard(List.of(
+                List.of(inlineButton("➕ Добавить цель", "addgoal")),
+                List.of(inlineButton("◀️ Меню", "main_menu"))
+        ));
+        return markup;
+    }
+
+    private static String truncate(String text, int max) {
+        if (text == null || text.length() <= max) {
+            return text != null ? text : "";
+        }
+        return text.substring(0, max - 1) + "…";
     }
 
     public static InlineKeyboardMarkup urlButton(String label, String url) {
