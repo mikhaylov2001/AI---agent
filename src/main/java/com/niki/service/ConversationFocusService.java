@@ -81,6 +81,10 @@ public class ConversationFocusService {
         persistFocus(user, topicId);
     }
 
+    public String loadTopicId(User user) {
+        return loadStoredFocus(user);
+    }
+
     public String buildPromptSection(ResolvedFocus focus) {
         if (focus == null || "general".equals(focus.topicId())) {
             return """

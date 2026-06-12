@@ -275,37 +275,61 @@ public class LlmService {
 
     private String guardReply(ConversationFocusService.ResolvedFocus focus, ChatIntent intent,
                               String userText, String reply) {
-        if (reply == null || reply.isBlank() || focus == null) {
-            return reply;
-        }
-        if (!"jobs".equals(focus.topicId()) && intent != ChatIntent.INTERVIEW) {
-            return reply;
-        }
-        if (intent == ChatIntent.INTERVIEW) {
+        if (reply == null || reply.isBlank()) {
             return reply;
         }
         String lower = reply.toLowerCase(Locale.ROOT);
-        if (looksLikeInterviewDerail(lower)) {
-            return """
-                    📍 *Контекст*
+        String userLower = JobTextPatterns.normalize(userText);
+        boolean jobContext = focus != null && "jobs".equals(focus.topicId())
+                || JobTextPatterns.isJobRelated(userLower);
 
-                    Продолжаем вакансии — не ухожу в собес.
-
-                    ▶️ *Сейчас*
-
-                    Напиши «открой сам» или нажми 💼 *Вакансии* — пришлю подборку с кнопками отклика на HH.""";
+        if (looksLikeNoInternetLie(lower) && jobContext) {
+            return jobSearchFallback(userText);
         }
-        if (looksLikeHallucinatedPercent(userText, lower)) {
-            return """
-                    📍 *Контекст*
+        if (focus != null && "jobs".equals(focus.topicId())) {
+            if (looksLikeInterviewDerail(lower)) {
+                return """
+                        📍 *Контекст*
 
-                    Ты прав — я напутал с контекстом. Остаёмся на вакансиях.
+                        Продолжаем вакансии — не ухожу в собес.
 
-                    ▶️ *Сейчас*
+                        ▶️ *Сейчас*
 
-                    Напиши «открой сам» — поищу Junior/Middle на HH и дам кнопки отклика.""";
+                        Напиши «Java developer» или нажми 💼 *Вакансии* — пришлю подборку с кнопками отклика.""";
+            }
+            if (looksLikeHallucinatedPercent(userText, lower)) {
+                return """
+                        📍 *Контекст*
+
+                        Ты прав — я напутал с контекстом. Остаёмся на вакансиях.
+
+                        ▶️ *Сейчас*
+
+                        Напиши «Java developer» — поищу на HH и дам кнопки отклика.""";
+            }
         }
         return reply;
+    }
+
+    private static boolean looksLikeNoInternetLie(String lower) {
+        return lower.contains("нет доступа к интернет")
+                || lower.contains("не имею доступа к интернет")
+                || lower.contains("не могу открыть hh")
+                || lower.contains("не могу зайти на hh")
+                || lower.contains("открой hh.ru")
+                || lower.contains("зайди на hh")
+                || (lower.contains("hh.ru") && lower.contains("сам"));
+    }
+
+    private static String jobSearchFallback(String userText) {
+        return """
+                💼 *Вакансии*
+
+                У меня есть поиск через HH API — напиши «Java developer» или нажми 💼 *Вакансии*.
+
+                ▶️ *Сейчас*
+
+                Я пришлю подборку с кнопками ✉️ отклика — не нужно открывать сайт вручную.""";
     }
 
     private static boolean looksLikeInterviewDerail(String lower) {

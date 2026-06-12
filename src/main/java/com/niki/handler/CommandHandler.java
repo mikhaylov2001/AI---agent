@@ -436,7 +436,10 @@ public class CommandHandler {
     protected BotResponse startApplyById(User user, String vacancyId) {
         Map<String, Object> vacancy = hhApplyService.getVacancyDetails(vacancyId);
         if (vacancy == null) {
-            return BotResponse.withCareerMenu("❌ Вакансия не найдена.");
+            String q = StringUtils.hasText(user.getJobSearchQuery()) ? user.getJobSearchQuery() : "Java backend developer";
+            HhService.VacancySearchResult fresh = hhService.searchVacancies(user, q);
+            return buildSearchResponse(fresh,
+                    "❌ Вакансия уже снята.\n\nАктуальные варианты по «" + q + "» 👇");
         }
         return buildApplyPreview(user, vacancy, vacancyId);
     }
@@ -524,7 +527,10 @@ public class CommandHandler {
     private BotResponse saveVacancyById(User user, String vacancyId) {
         Map<String, Object> v = hhApplyService.getVacancyDetails(vacancyId);
         if (v == null) {
-            return BotResponse.withCareerMenu("❌ Вакансия не найдена");
+            String q = StringUtils.hasText(user.getJobSearchQuery()) ? user.getJobSearchQuery() : "Java backend developer";
+            HhService.VacancySearchResult fresh = hhService.searchVacancies(user, q);
+            return buildSearchResponse(fresh,
+                    "❌ Вакансия уже снята или недоступна.\n\nСвежая подборка по «" + q + "» 👇");
         }
         HhService.VacancyDto dto = mapVacancy(v, vacancyId);
         jobApplicationService.upsert(user, dto, ApplicationStatus.SAVED);
@@ -615,10 +621,16 @@ public class CommandHandler {
     }
 
     private BotResponse buildSearchResponse(HhService.VacancySearchResult result) {
+        return buildSearchResponse(result, null);
+    }
+
+    private BotResponse buildSearchResponse(HhService.VacancySearchResult result, String prefix) {
         InlineKeyboardMarkup inline = result.vacancies().isEmpty()
                 ? TelegramKeyboards.jobSearchSuggestions()
                 : TelegramKeyboards.vacancyActions(result.vacancies());
-        return BotResponse.withInlineAndMenu(hhService.formatSearchResult(result), inline);
+        String body = prefix != null ? prefix + "\n\n" + hhService.formatSearchResult(result)
+                : hhService.formatSearchResult(result);
+        return BotResponse.withInlineAndMenu(body, inline);
     }
 
     private BotResponse handleProfileSetup(User user, String rawText, String normalized) {

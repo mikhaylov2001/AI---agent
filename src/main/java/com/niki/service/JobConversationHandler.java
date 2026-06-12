@@ -11,7 +11,7 @@ import org.springframework.util.StringUtils;
 import java.util.Optional;
 
 /**
- * Вакансии/HH — без LLM, чтобы бот не уходил в собес или выдуманные «30%».
+ * Вакансии/HH — без LLM, чтобы бот не уходил в «нет интернета» и mock-собес.
  */
 @Service
 @RequiredArgsConstructor
@@ -26,19 +26,24 @@ public class JobConversationHandler {
             return Optional.empty();
         }
         String lower = JobTextPatterns.normalize(text);
-        if (!JobTextPatterns.isJobRelated(lower)) {
+        String storedTopic = conversationFocusService.loadTopicId(user);
+        boolean jobThread = JobTextPatterns.isJobRelated(lower)
+                || "jobs".equals(storedTopic)
+                || JobTextPatterns.isJobThreadContinuation(lower);
+
+        if (!jobThread) {
             return Optional.empty();
         }
 
         conversationFocusService.persistTopic(user, "jobs");
+        String query = JobTextPatterns.extractSearchQuery(text, user.getJobSearchQuery());
+        user.setJobSearchQuery(query);
+        userRepository.save(user);
 
-        if (JobTextPatterns.wantsBotToSearch(lower)) {
-            return Optional.of(searchWithPreferences(user, lower));
-        }
         if (JobTextPatterns.requestsJuniorMiddle(lower) || JobTextPatterns.isJobSearchRequest(lower)) {
             return Optional.of(searchJuniorMiddle(user));
         }
-        return Optional.empty();
+        return Optional.of(searchWithQuery(user, query));
     }
 
     @Transactional
@@ -46,7 +51,6 @@ public class JobConversationHandler {
         String query = StringUtils.hasText(user.getJobSearchQuery())
                 ? user.getJobSearchQuery()
                 : "Java backend developer";
-        user.setJobSearchQuery(query);
         user.setSearchExperience("between1And3");
         userRepository.save(user);
 
@@ -54,7 +58,8 @@ public class JobConversationHandler {
                 .withExperience("between1And3");
         HhService.VacancySearchResult result = hhService.searchVacancies(middle);
         if (!result.vacancies().isEmpty()) {
-            return buildSearchResponse(result, "Подборка *Middle* по запросу «" + query + "» 👇");
+            return buildSearchResponse(result,
+                    "Подборка *Middle* по «" + query + "» — жми ✉️ чтобы откликнуться 👇");
         }
 
         HhSearchFilters junior = HhSearchFilters.fromUser(user, query + " junior", "", hhService.getSearchPerPage())
@@ -63,19 +68,22 @@ public class JobConversationHandler {
         return buildSearchResponse(result, "Подборка *Junior/Middle* 👇");
     }
 
-    private BotResponse searchWithPreferences(User user, String lower) {
-        if (JobTextPatterns.requestsJuniorMiddle(lower)) {
-            return searchJuniorMiddle(user);
-        }
-        String query = StringUtils.hasText(user.getJobSearchQuery())
-                ? user.getJobSearchQuery()
-                : "Java backend developer";
+    BotResponse searchWithQuery(User user, String query) {
         HhService.VacancySearchResult result = hhService.searchVacancies(user, query);
-        return buildSearchResponse(result,
-                "Я не открываю браузер, но *сам ищу на HH* и даю кнопки отклика 👇");
+        String prefix = """
+                💼 *Ищу на HH через API* — не браузер, но вакансии реальные.
+                
+                Запрос: «%s»
+                Нажми ✉️ под понравившейся — сгенерирую письмо и отклик.""".formatted(query);
+        return buildSearchResponse(result, prefix);
     }
 
     private BotResponse buildSearchResponse(HhService.VacancySearchResult result, String prefix) {
+        if (result.error() != null) {
+            return BotResponse.withInlineAndMenu(
+                    prefix + "\n\n⚠️ " + result.error() + "\n\nПопробуй /connect\\_hh или позже.",
+                    com.niki.bot.TelegramKeyboards.jobSearchSuggestions());
+        }
         var inline = result.vacancies().isEmpty()
                 ? com.niki.bot.TelegramKeyboards.jobSearchSuggestions()
                 : com.niki.bot.TelegramKeyboards.vacancyActions(result.vacancies());

@@ -7,6 +7,22 @@ import static org.junit.jupiter.api.Assertions.*;
 class JobTextPatternsTest {
 
     @Test
+    void detectsJavaDeveloperTypo() {
+        assertTrue(JobTextPatterns.isJobRelated("java develover"));
+    }
+
+    @Test
+    void detectsSelectBestVacancies() {
+        String lower = JobTextPatterns.normalize("выбери сам какие лучше и присылай сообщениями");
+        assertTrue(JobTextPatterns.isJobThreadContinuation(lower));
+    }
+
+    @Test
+    void extractsQueryFromTypo() {
+        assertEquals("Java developer", JobTextPatterns.extractSearchQuery("java develover", null));
+    }
+
+    @Test
     void detectsOpenYourselfRequest() {
         assertTrue(JobTextPatterns.wantsBotToSearch("открой сам"));
     }
