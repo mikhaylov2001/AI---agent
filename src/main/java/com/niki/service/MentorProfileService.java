@@ -10,7 +10,10 @@ import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -19,6 +22,17 @@ public class MentorProfileService {
     private final UserRepository userRepository;
 
     public static final String PLACEHOLDER = "(ещё не заполнено)";
+
+    private static final List<String> SECTION_ORDER = List.of(
+            "ГЛАВНАЯ ЦЕЛЬ",
+            "ТЕКУЩИЕ ЦЕЛИ",
+            "ГЛАВНЫЕ ПРОБЛЕМЫ",
+            "ЧТО ЧАЩЕ ТОРМОЗИТ",
+            "КАК ОБЫЧНО СРЫВАЮСЬ",
+            "ЧТО ВОЗВРАЩАЕТ В ФОКУС",
+            "ЧЕМУ УЧУСЬ СЕЙЧАС",
+            "ВАЖНО ПОМНИТЬ"
+    );
 
     public String loadMentorInstructions() {
         try {
@@ -85,7 +99,7 @@ public class MentorProfileService {
                 ГЛАВНАЯ ЦЕЛЬ:
                 %s
 
-                ТЕКУЩИЕ ЦЕЛИ (3):
+                ТЕКУЩИЕ ЦЕЛИ:
                 %s
 
                 ГЛАВНЫЕ ПРОБЛЕМЫ:
@@ -111,10 +125,43 @@ public class MentorProfileService {
         ).trim();
     }
 
+    @Transactional
     public String formatProfileForDisplay(User user) {
         ensureDefaultProfile(user);
-        return "🧠 *Твой профиль*\n\n" + user.getMentorProfile()
-                + "\n\n_Обновить:_ «📝 Настроить профиль»";
+        ProfileData data = parseProfile(user.getMentorProfile());
+        String repaired = formatProfile(data);
+        if (!repaired.equals(user.getMentorProfile().trim())) {
+            user.setMentorProfile(repaired);
+            userRepository.save(user);
+        }
+
+        StringBuilder sb = new StringBuilder("🧠 *Твой профиль*\n\n");
+        appendIfFilled(sb, "🎯", "Главная цель", data.mainGoal());
+        appendIfFilled(sb, "📌", "Цели", data.currentGoals());
+        appendIfFilled(sb, "⚠️", "Проблемы", data.problems());
+        appendIfFilled(sb, "🐢", "Что тормозит", data.blockers());
+        appendIfFilled(sb, "💥", "Как срываюсь", data.procrastination());
+        appendIfFilled(sb, "🔋", "Что возвращает фокус", data.focusRestore());
+        appendIfFilled(sb, "📚", "Учусь сейчас", data.learningNow());
+        appendIfFilled(sb, "💡", "Важно помнить", data.remember());
+
+        if (sb.length() <= "🧠 *Твой профиль*\n\n".length()) {
+            sb.append("_Профиль пуст — нажми «📝 Настроить профиль»_\n\n");
+        }
+        sb.append("_Обновить:_ «📝 Настроить профиль»");
+        return sb.toString().trim();
+    }
+
+    private static void appendIfFilled(StringBuilder sb, String emoji, String label, String value) {
+        if (!hasContent(value)) {
+            return;
+        }
+        sb.append(emoji).append(" *").append(label).append("*\n")
+                .append(value.trim()).append("\n\n");
+    }
+
+    private static boolean hasContent(String value) {
+        return StringUtils.hasText(value) && !PLACEHOLDER.equals(value.trim());
     }
 
     public String profileSetupQuestion(int step) {
@@ -125,9 +172,9 @@ public class MentorProfileService {
                     Сейчас: *Java backend разработчик*.
                     Напиши свою главную цель или «да», если оставляем.""";
             case 2 -> """
-                    📝 *Шаг 2/4 — Три цели*
+                    📝 *Шаг 2/4 — Цели*
                     
-                    Напиши 3 текущие цели (списком или через запятую).""";
+                    Напиши текущие цели (списком или через запятую).""";
             case 3 -> """
                     📝 *Шаг 3/4 — Проблемы*
                     
@@ -190,26 +237,71 @@ public class MentorProfileService {
     }
 
     private static String extractSection(String raw, String title) {
-        int start = raw.indexOf(title + ":");
-        if (start < 0) {
+        int contentStart = sectionContentStart(raw, title);
+        if (contentStart < 0) {
             return PLACEHOLDER;
         }
-        start = raw.indexOf('\n', start) + 1;
+        int contentEnd = nextSectionStart(raw, contentStart, title);
+        String value = sanitizeSectionBody(raw.substring(contentStart, contentEnd).trim());
+        return value.isEmpty() ? PLACEHOLDER : value;
+    }
+
+    private static int sectionContentStart(String raw, String title) {
+        Matcher m = sectionHeaderPattern(title).matcher(raw);
+        return m.find() ? m.end() : -1;
+    }
+
+    private static int nextSectionStart(String raw, int after, String currentTitle) {
         int end = raw.length();
-        for (String next : new String[]{
-                "ГЛАВНАЯ ЦЕЛЬ", "ТЕКУЩИЕ ЦЕЛИ", "ГЛАВНЫЕ ПРОБЛЕМЫ", "ЧТО ЧАЩЕ ТОРМОЗИТ",
-                "КАК ОБЫЧНО СРЫВАЮСЬ", "ЧТО ВОЗВРАЩАЕТ В ФОКУС", "ЧЕМУ УЧУСЬ СЕЙЧАС", "ВАЖНО ПОМНИТЬ"
-        }) {
-            if (next.equals(title)) {
+        for (String section : SECTION_ORDER) {
+            if (section.equals(currentTitle)) {
                 continue;
             }
-            int idx = raw.indexOf("\n" + next + ":", start);
-            if (idx > start && idx < end) {
-                end = idx;
+            Matcher m = Pattern.compile("\\n" + sectionHeaderRegex(section), Pattern.MULTILINE).matcher(raw);
+            if (m.find(after) && m.start() < end) {
+                end = m.start();
             }
         }
-        String value = raw.substring(start, end).trim();
-        return value.isEmpty() ? PLACEHOLDER : value;
+        return end;
+    }
+
+    private static Pattern sectionHeaderPattern(String title) {
+        return Pattern.compile("(?:^|\\n)" + sectionHeaderRegex(title), Pattern.MULTILINE);
+    }
+
+    private static String sectionHeaderRegex(String title) {
+        return Pattern.quote(title) + "(?:\\s*\\(\\d+\\))?\\s*:\\s*";
+    }
+
+    /** Убираем вложенные заголовки из испорченных профилей. */
+    private static String sanitizeSectionBody(String body) {
+        StringBuilder clean = new StringBuilder();
+        for (String line : body.split("\n")) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) {
+                if (!clean.isEmpty() && clean.charAt(clean.length() - 1) != '\n') {
+                    clean.append('\n');
+                }
+                continue;
+            }
+            if (isSectionHeaderLine(trimmed)) {
+                continue;
+            }
+            if (!clean.isEmpty() && clean.charAt(clean.length() - 1) != '\n') {
+                clean.append('\n');
+            }
+            clean.append(trimmed);
+        }
+        return clean.toString().trim();
+    }
+
+    private static boolean isSectionHeaderLine(String line) {
+        for (String section : SECTION_ORDER) {
+            if (line.matches("(?i)" + Pattern.quote(section) + "(?:\\s*\\(\\d+\\))?\\s*:?\\s*")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean isAffirmative(String text) {
