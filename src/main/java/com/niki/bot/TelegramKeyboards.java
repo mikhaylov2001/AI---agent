@@ -206,6 +206,7 @@ public final class TelegramKeyboards {
                         inlineButton("75%", "progress:" + goalId + ":75"),
                         inlineButton("✅ 100%", "progress:" + goalId + ":100")
                 ),
+                List.of(inlineButton("✏️ Свой %", "progresscustom:" + goalId)),
                 List.of(inlineButton("◀️ К целям", "goals"))
         ));
         return markup;

@@ -55,6 +55,18 @@ public class CommandHandler {
             Goal goal = goalService.addGoal(user, text, GoalCategory.CAREER);
             return goalsResponse(user, "✅ Цель добавлена: *" + goal.getTitle() + "*");
         }
+        if (state == UserSessionService.State.AWAITING_GOAL_PROGRESS) {
+            String goalIdPayload = sessionService.getPayload(user.getTelegramId());
+            sessionService.clear(user.getTelegramId());
+            if (normalized.startsWith("/")) {
+                return handleCommand(normalized, user);
+            }
+            Integer percent = parseProgressPercent(text);
+            if (percent == null) {
+                return goalsResponse(user, "❌ Нужно число от 0 до 100.\n_Пример:_ 37 или 37%");
+            }
+            return applyGoalProgress(user, goalIdPayload + ":" + percent);
+        }
         if (state == UserSessionService.State.AWAITING_JOB_QUERY) {
             sessionService.clear(user.getTelegramId());
             if (normalized.startsWith("/")) {
@@ -122,6 +134,9 @@ public class CommandHandler {
         }
         if (data.startsWith("progress:")) {
             return applyGoalProgress(user, data.substring(9));
+        }
+        if (data.startsWith("progresscustom:")) {
+            return startCustomProgressInput(user, Long.parseLong(data.substring(15)));
         }
         return handleCommand("/" + data, user);
     }
@@ -257,8 +272,41 @@ public class CommandHandler {
             return goalsResponse(user, "❌ Цель не найдена");
         }
         String text = "📈 *" + goal.getTitle() + "*\n\nСейчас: " + GoalService.progressLine(goal.getProgress())
-                + "\n\nВыбери новый прогресс:";
+                + "\n\nВыбери прогресс или *✏️ Свой %*:";
         return BotResponse.withInlineAndMenu(text, TelegramKeyboards.goalSetProgress(goalId));
+    }
+
+    private BotResponse startCustomProgressInput(User user, Long goalId) {
+        Goal goal = goalService.getActiveGoals(user.getTelegramId()).stream()
+                .filter(g -> g.getId().equals(goalId))
+                .findFirst()
+                .orElse(null);
+        if (goal == null) {
+            return goalsResponse(user, "❌ Цель не найдена");
+        }
+        sessionService.setState(user.getTelegramId(), UserSessionService.State.AWAITING_GOAL_PROGRESS);
+        sessionService.setPayload(user.getTelegramId(), String.valueOf(goalId));
+        return BotResponse.withMainMenu(
+                "✏️ *" + goal.getTitle() + "*\n\nНапиши прогресс числом *0–100*.\n_Примеры:_ 37 · 37% · 85");
+    }
+
+    private static Integer parseProgressPercent(String text) {
+        if (!StringUtils.hasText(text)) {
+            return null;
+        }
+        String digits = text.trim().replaceAll("[^0-9]", "");
+        if (digits.isEmpty()) {
+            return null;
+        }
+        try {
+            int value = Integer.parseInt(digits);
+            if (value < 0 || value > 100) {
+                return null;
+            }
+            return value;
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private BotResponse applyGoalProgress(User user, String payload) {

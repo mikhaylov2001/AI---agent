@@ -69,7 +69,7 @@ public class HealthController {
         body.put("deliveryMode", deliveryMode);
         body.put("webhookUrl", StringUtils.hasText(webhookUrl) ? webhookUrl : null);
         body.put("hhAppConfigured", hhAppTokenService.isConfigured());
-        body.put("version", "2.0.9");
+        body.put("version", "2.0.10");
         return body;
     }
 

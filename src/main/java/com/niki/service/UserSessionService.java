@@ -14,6 +14,7 @@ public class UserSessionService {
     public enum State {
         NONE,
         AWAITING_GOAL_TITLE,
+        AWAITING_GOAL_PROGRESS,
         AWAITING_JOB_QUERY,
         AWAITING_APPLY_URL,
         PROFILE_SETUP_STEP_1,
