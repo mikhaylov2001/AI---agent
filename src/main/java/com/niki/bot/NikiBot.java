@@ -3,8 +3,6 @@ package com.niki.bot;
 import com.niki.handler.CommandHandler;
 import com.niki.service.NikiMessageSender;
 import com.niki.service.ProactiveAgentService;
-import com.niki.util.MentorResponseFormatter;
-import com.niki.util.TelegramHtml;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -160,53 +158,33 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
         }
     }
 
-    private void handleCallback(Update update) throws TelegramApiException {
+    private void handleCallback(Update update) {
         var callback = update.getCallbackQuery();
         if (callback.getMessage() == null) {
             return;
         }
         Long chatId = callback.getMessage().getChatId();
-        execute(AnswerCallbackQuery.builder()
-                .callbackQueryId(callback.getId())
-                .build());
-        BotResponse response = commandHandler.handleCallback(callback.getFrom().getId(), callback.getData());
-        sendResponse(chatId, response);
+        try {
+            execute(AnswerCallbackQuery.builder()
+                    .callbackQueryId(callback.getId())
+                    .build());
+        } catch (TelegramApiException e) {
+            log.warn("answerCallbackQuery: {}", e.getMessage());
+        }
+        try {
+            BotResponse response = commandHandler.handleCallback(callback.getFrom().getId(), callback.getData());
+            sendResponse(chatId, response);
+        } catch (Exception e) {
+            log.error("Ошибка callback {}: {}", callback.getData(), e.getMessage(), e);
+            sendPlain(chatId, "Что-то пошло не так. Нажми /start");
+        }
     }
 
     private void sendResponse(Long chatId, BotResponse response) {
-        try {
-            execute(buildMessage(chatId, response));
-        } catch (TelegramApiException e) {
-            log.warn("HTML не прошёл, шлём plain: {}", e.getMessage());
-            try {
-                execute(SendMessage.builder()
-                        .chatId(chatId.toString())
-                        .text(MentorResponseFormatter.sanitizePlain(response.text()))
-                        .disableWebPagePreview(response.disableWebPreview())
-                        .replyMarkup(response.inlineKeyboard() != null
-                                ? response.inlineKeyboard() : response.replyKeyboard())
-                        .build());
-            } catch (TelegramApiException e2) {
-                log.error("Ошибка отправки в {}: {}", chatId, e2.getMessage());
-                sendPlain(chatId, "Не удалось отправить ответ. Нажми /start или повтори.");
-            }
+        if (TelegramSendHelper.send(this, chatId, response)) {
+            return;
         }
-    }
-
-    private SendMessage buildMessage(Long chatId, BotResponse response) {
-        SendMessage.SendMessageBuilder builder = SendMessage.builder()
-                .chatId(chatId.toString())
-                .text(TelegramHtml.markdownToHtml(response.text()))
-                .parseMode("HTML");
-        if (response.disableWebPreview()) {
-            builder.disableWebPagePreview(true);
-        }
-        if (response.inlineKeyboard() != null) {
-            builder.replyMarkup(response.inlineKeyboard());
-        } else if (response.replyKeyboard() != null) {
-            builder.replyMarkup(response.replyKeyboard());
-        }
-        return builder.build();
+        sendPlain(chatId, "Не удалось отправить ответ. Нажми /start или повтори.");
     }
 
     @Override

@@ -2,6 +2,7 @@ package com.niki.service;
 
 import com.niki.model.User;
 import com.niki.repository.UserRepository;
+import com.niki.util.TelegramLimits;
 import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
@@ -190,7 +191,7 @@ public class MentorProfileService {
             sb.append("_Профиль пуст — нажми «📝 Настроить профиль»_\n\n");
         }
         sb.append("_Обновить:_ «📝 Настроить профиль»");
-        return sb.toString().trim();
+        return TelegramLimits.truncate(sb.toString().trim(), 3800);
     }
 
     private static void appendIfFilled(StringBuilder sb, String emoji, String label, String value) {
