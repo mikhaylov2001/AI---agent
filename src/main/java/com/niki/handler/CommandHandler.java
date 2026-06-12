@@ -132,8 +132,12 @@ public class CommandHandler {
             case "/learning", "/study" -> mentorChat(user, "Помоги с учёбой.", ChatIntent.LEARNING);
             case "/interview" -> mentorChat(user, StringUtils.hasText(args) ? args : "Подготовь меня к собеседованию Java backend.", ChatIntent.INTERVIEW);
             case "/memory" -> mentorChat(user, "", ChatIntent.MEMORY);
-            case "/goals" -> BotResponse.withMainMenu(
-                    goalService.formatGoalsWithProgressHint(goalService.getActiveGoals(user.getTelegramId())));
+            case "/цели", "/goals" -> BotResponse.withMainMenu(formatGoalsMessage(user));
+            case "/сброс", "/сбросить", "/reset" -> {
+                llmService.clearConversationMemory(user);
+                yield BotResponse.withMainMenu(
+                        "🗑 История и память сброшены.\n\nНачнём с чистого листа — напиши, с чего начнём.");
+            }
             case "/progress" -> handleProgress(user, args);
             case "/addgoal" -> {
                 if (args.isBlank()) {
@@ -417,6 +421,15 @@ public class CommandHandler {
                 TelegramKeyboards.startInlineMenu(), true);
     }
 
+    private String formatGoalsMessage(User user) {
+        String tracked = goalService.formatGoalsWithProgressHint(
+                goalService.getActiveGoals(user.getTelegramId()));
+        if (tracked.contains("нет активных")) {
+            return mentorProfileService.formatCoreGoals();
+        }
+        return mentorProfileService.formatCoreGoals() + "\n\n*В боте:*\n" + tracked;
+    }
+
     private BotResponse helpMessage() {
         return BotResponse.withMainMenu("""
                 📖 *Навигация Ники*
@@ -426,7 +439,8 @@ public class CommandHandler {
                 💼 Вакансии · 📋 Отклики · 🎤 Собес · 📚 Учёба
                 
                 *Автопилот:*
-                /autopilot on|off — утро 9:00, день 14:00, вечер 21:00 MSK
+                /autopilot on|off — утро 8:00, день 14:00, вечер 21:00 MSK
+                /цели · /сброс — цели и сброс памяти
                 /job\\_alerts on|off · /job\\_query Java backend
                 
                 *HH.ru:*

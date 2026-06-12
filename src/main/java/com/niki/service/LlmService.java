@@ -6,7 +6,6 @@ import com.niki.model.User;
 import com.niki.repository.ChatMessageRepository;
 import com.niki.repository.UserRepository;
 import com.niki.util.MentorResponseFormatter;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.PageRequest;
@@ -20,16 +19,16 @@ import java.util.*;
 import java.util.Locale;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
 public class LlmService {
 
     private final WebClient llmWebClient;
+    private final WebClient anthropicWebClient;
     private final ChatMessageRepository chatMessageRepository;
     private final UserRepository userRepository;
     private final MentorProfileService mentorProfileService;
 
-    @Value("${llm.provider:groq}")
+    @Value("${llm.provider:claude}")
     private String provider;
 
     @Value("${llm.api.model}")
@@ -47,10 +46,41 @@ public class LlmService {
     @Value("${llm.api.key:}")
     private String apiKey;
 
+    @Value("${llm.anthropic.key:}")
+    private String anthropicKey;
+
+    @Value("${llm.anthropic.model:claude-sonnet-4-20250514}")
+    private String anthropicModel;
+
+    public LlmService(WebClient llmWebClient,
+                      WebClient anthropicWebClient,
+                      ChatMessageRepository chatMessageRepository,
+                      UserRepository userRepository,
+                      MentorProfileService mentorProfileService) {
+        this.llmWebClient = llmWebClient;
+        this.anthropicWebClient = anthropicWebClient;
+        this.chatMessageRepository = chatMessageRepository;
+        this.userRepository = userRepository;
+        this.mentorProfileService = mentorProfileService;
+    }
+
+    private boolean isClaude() {
+        String p = provider.toLowerCase(Locale.ROOT);
+        return "claude".equals(p) || "anthropic".equals(p);
+    }
+
+    private String effectiveApiKey() {
+        return isClaude() ? anthropicKey : apiKey;
+    }
+
+    private String effectiveModel() {
+        return isClaude() ? anthropicModel : model;
+    }
+
     @Transactional
     public String proactiveBrief(User user, List<Goal> goals, String task) {
         String fallback = staticProactiveMessage(task, goals);
-        if (!StringUtils.hasText(apiKey)) {
+        if (!StringUtils.hasText(effectiveApiKey())) {
             return fallback;
         }
         mentorProfileService.ensureDefaultProfile(user);
@@ -86,8 +116,13 @@ public class LlmService {
 
     @Transactional
     public String chat(User user, String userText, List<Goal> goals, ChatIntent intent) {
-        if (!StringUtils.hasText(apiKey)) {
-            return """
+        if (!StringUtils.hasText(effectiveApiKey())) {
+            return isClaude()
+                    ? """
+                    ИИ не настроен.
+                    Добавь CLAUDE_API_KEY в .env или Environment на Render.
+                    Ключ: console.anthropic.com → API Keys."""
+                    : """
                     ИИ не настроен.
                     Добавь GROQ_API_KEY в .env или Environment на Render.
                     Ключ: console.groq.com → API Keys (бесплатно).""";
@@ -146,7 +181,7 @@ public class LlmService {
     private String buildSystemPrompt(User user, List<Goal> goals, ChatIntent intent) {
         StringBuilder p = new StringBuilder(mentorProfileService.loadMentorInstructions());
         p.append("\n\nИмя пользователя: ").append(user.getFirstName()).append("\n");
-        p.append("Провайдер ИИ: ").append(provider).append(" (").append(model).append(").\n");
+        p.append("Провайдер ИИ: ").append(provider).append(" (").append(effectiveModel()).append(").\n");
         p.append("""
                 
                 ЖЁСТКИЕ ЛИМИТЫ:
@@ -199,7 +234,7 @@ public class LlmService {
     }
 
     public int scoreVacancyMatch(User user, String vacancyTitle, String description) {
-        if (!StringUtils.hasText(apiKey)) {
+        if (!StringUtils.hasText(effectiveApiKey())) {
             return 50;
         }
         mentorProfileService.ensureDefaultProfile(user);
@@ -222,22 +257,7 @@ public class LlmService {
                 Map.of("role", "user", "content", prompt)
         );
         try {
-            Map<String, Object> body = new LinkedHashMap<>();
-            body.put("model", model);
-            body.put("messages", messages);
-            body.put("max_tokens", 10);
-            body.put("temperature", 0.1);
-            Map<String, Object> response = llmWebClient.post()
-                    .uri("/chat/completions")
-                    .bodyValue(body)
-                    .retrieve()
-                    .bodyToMono(Map.class)
-                    .block();
-            if (response == null) {
-                return 50;
-            }
-            List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
-            String raw = cleanResponse((String) ((Map<String, Object>) choices.get(0).get("message")).get("content"));
+            String raw = callLlm(messages, 10, 0.1);
             String digits = raw.replaceAll("[^0-9]", "");
             if (digits.isEmpty()) {
                 return 50;
@@ -250,8 +270,10 @@ public class LlmService {
     }
 
     public String generateCoverLetter(User user, String vacancyName, String description, String resumeSummary, int matchScore) {
-        if (!StringUtils.hasText(apiKey)) {
-            return "API ключ Groq не настроен (GROQ_API_KEY).";
+        if (!StringUtils.hasText(effectiveApiKey())) {
+            return isClaude()
+                    ? "API ключ Claude не настроен (CLAUDE_API_KEY)."
+                    : "API ключ Groq не настроен (GROQ_API_KEY).";
         }
         mentorProfileService.ensureDefaultProfile(user);
         String prompt = String.format("""
@@ -284,7 +306,7 @@ public class LlmService {
     }
 
     public String rewriteCoverLetter(User user, String letter, String instruction) {
-        if (!StringUtils.hasText(apiKey)) {
+        if (!StringUtils.hasText(effectiveApiKey())) {
             return letter;
         }
         List<Map<String, String>> messages = List.of(
@@ -309,6 +331,9 @@ public class LlmService {
     @SuppressWarnings("unchecked")
     private String callLlmWithRetry(List<Map<String, String>> messages, int tokens, double temp, int retriesLeft) {
         try {
+            if (isClaude()) {
+                return callAnthropic(messages, tokens, temp);
+            }
             Map<String, Object> body = new LinkedHashMap<>();
             body.put("model", model);
             body.put("messages", messages);
@@ -329,7 +354,7 @@ public class LlmService {
             return cleanResponse((String) message.get("content"));
         } catch (WebClientResponseException e) {
             if (e.getStatusCode().value() == 429 && retriesLeft > 0) {
-                log.warn("Groq 429 — retry через 2 сек");
+                log.warn("{} 429 — retry через 2 сек", provider);
                 sleepQuietly(2000);
                 return callLlmWithRetry(messages, tokens, temp, retriesLeft - 1);
             }
@@ -337,8 +362,53 @@ public class LlmService {
             return mapLlmError(e);
         } catch (Exception e) {
             log.error("Ошибка {}: {}", provider, e.getMessage());
-            return "Не удалось связаться с " + provider + ". Проверь GROQ_API_KEY и интернет.";
+            String keyHint = isClaude() ? "CLAUDE_API_KEY" : "GROQ_API_KEY";
+            return "Не удалось связаться с " + provider + ". Проверь " + keyHint + " и интернет.";
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private String callAnthropic(List<Map<String, String>> messages, int tokens, double temp) {
+        String system = messages.stream()
+                .filter(m -> "system".equals(m.get("role")))
+                .map(m -> m.get("content"))
+                .findFirst()
+                .orElse("");
+        List<Map<String, String>> chatMessages = new ArrayList<>();
+        for (Map<String, String> m : messages) {
+            if (!"system".equals(m.get("role"))) {
+                chatMessages.add(Map.of("role", m.get("role"), "content", m.get("content")));
+            }
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model", anthropicModel);
+        body.put("max_tokens", tokens);
+        body.put("system", system);
+        body.put("messages", chatMessages);
+        body.put("temperature", temp);
+
+        Map<String, Object> response = anthropicWebClient.post()
+                .uri("/v1/messages")
+                .bodyValue(body)
+                .retrieve()
+                .bodyToMono(Map.class)
+                .block();
+        if (response == null) {
+            return "Пустой ответ от Claude.";
+        }
+        List<Map<String, Object>> content = (List<Map<String, Object>>) response.get("content");
+        if (content == null || content.isEmpty()) {
+            return "Пустой ответ от Claude.";
+        }
+        return cleanResponse((String) content.get(0).get("text"));
+    }
+
+    @Transactional
+    public void clearConversationMemory(User user) {
+        chatMessageRepository.deleteAllByUserTelegramId(user.getTelegramId());
+        user.setMemorySummary(null);
+        userRepository.save(user);
+        log.info("Память сброшена для {}", user.getTelegramId());
     }
 
     private static void sleepQuietly(long ms) {
@@ -367,6 +437,7 @@ public class LlmService {
     private String mapLlmError(WebClientResponseException e) {
         int status = e.getStatusCode().value();
         String keyHint = switch (provider.toLowerCase(Locale.ROOT)) {
+            case "claude", "anthropic" -> "CLAUDE_API_KEY (console.anthropic.com)";
             case "groq" -> "GROQ_API_KEY (console.groq.com → API Keys)";
             case "perplexity" -> "PERPLEXITY_API_KEY (perplexity.ai → Settings → API)";
             default -> "LLM API key";
@@ -374,8 +445,8 @@ public class LlmService {
         return switch (status) {
             case 401 -> "Неверный ключ. Проверь " + keyHint + ".";
             case 403 -> "Доступ запрещён (403). Проверь лимиты провайдера.";
-            case 429 -> "⚠️ Groq занят (лимит). Подожди 30 сек и нажми снова.";
-            case 404 -> "Модель %s не найдена. Проверь LLM_MODEL.".formatted(model);
+            case 429 -> "⚠️ Лимит запросов. Подожди 30 сек и нажми снова.";
+            case 404 -> "Модель %s не найдена. Проверь LLM_MODEL / CLAUDE_MODEL.".formatted(effectiveModel());
             default -> provider + " вернул ошибку %d. Смотри логи сервера.".formatted(status);
         };
     }
@@ -397,7 +468,7 @@ public class LlmService {
     @SuppressWarnings("unchecked")
     private void updateMemorySummaryIfNeeded(User user) {
         long totalMessages = chatMessageRepository.countByUserTelegramId(user.getTelegramId());
-        if (totalMessages % 50 != 0 || !StringUtils.hasText(apiKey)) {
+        if (totalMessages % 50 != 0 || !StringUtils.hasText(effectiveApiKey())) {
             return;
         }
         log.info("Обновляю долгосрочную память для {}", user.getFirstName());
@@ -419,19 +490,10 @@ public class LlmService {
                 Map.of("role", "user", "content", "Диалог:\n" + dialogue)
         );
         try {
-            Map<String, Object> body = Map.of(
-                    "model", model, "messages", summaryRequest,
-                    "max_tokens", 300, "temperature", 0.3
-            );
-            Map<String, Object> response = llmWebClient.post()
-                    .uri("/chat/completions")
-                    .bodyValue(body).retrieve().bodyToMono(Map.class).block();
-            if (response == null) {
+            String summary = cleanResponse(callLlm(summaryRequest, 300, 0.3));
+            if (!StringUtils.hasText(summary) || summary.startsWith("⚠️") || summary.contains("не настроен")) {
                 return;
             }
-            List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
-            String summary = cleanResponse(
-                    (String) ((Map<String, Object>) choices.get(0).get("message")).get("content"));
             user.setMemorySummary(summary);
             userRepository.save(user);
             log.info("Память обновлена для {}", user.getFirstName());

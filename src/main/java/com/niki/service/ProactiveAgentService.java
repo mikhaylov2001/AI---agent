@@ -7,6 +7,7 @@ import com.niki.model.User;
 import com.niki.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,6 +31,9 @@ public class ProactiveAgentService {
     private final LlmService llmService;
     private final HhService hhService;
     private final JobApplicationService jobApplicationService;
+
+    @Value("${telegram.owner.id:0}")
+    private long ownerTelegramId;
 
     private NikiMessageSender messageSender;
 
@@ -78,7 +82,7 @@ public class ProactiveAgentService {
     public Map<String, Object> runDueTasks() {
         int hour = ZonedDateTime.now(ZoneOffset.UTC).getHour();
         Map<String, Object> ran = new LinkedHashMap<>();
-        if (hour == 6) {
+        if (hour == 5) {
             morningBrief();
             ran.put("morning", true);
         }
@@ -158,7 +162,7 @@ public class ProactiveAgentService {
         user.setOnboardingDone(true);
         userRepository.save(user);
         return enabled
-                ? "✅ *Автопилот включён*\n\nЯ буду писать сам: утро 9:00, день 14:00, вечер 21:00 (MSK).\nНа Render Free используй /internal/cron + UptimeRobot."
+                ? "✅ *Автопилот включён*\n\nЯ буду писать сам: утро 8:00, день 14:00, вечер 21:00 (MSK).\nНа Render Free используй /internal/cron + UptimeRobot."
                 : "⏸ Автопилот выключен. Пиши сам, когда нужен.";
     }
 
@@ -203,6 +207,9 @@ public class ProactiveAgentService {
         }
         log.info("Проактивный цикл...");
         for (User user : userRepository.findByProactiveEnabledTrue()) {
+            if (!eligibleForProactive(user)) {
+                continue;
+            }
             try {
                 action.accept(user);
                 sleepBetweenUsers();
@@ -210,6 +217,16 @@ public class ProactiveAgentService {
                 log.error("Proactive для {}: {}", user.getTelegramId(), e.getMessage());
             }
         }
+    }
+
+    private boolean eligibleForProactive(User user) {
+        if (!isProactiveOn(user)) {
+            return false;
+        }
+        if (ownerTelegramId > 0) {
+            return user.getTelegramId().equals(ownerTelegramId);
+        }
+        return true;
     }
 
     private static void sleepBetweenUsers() {

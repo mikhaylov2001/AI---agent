@@ -16,12 +16,18 @@ services:
         sync: false
       - key: TELEGRAM_WEBHOOK_SECRET
         sync: false
+      - key: TELEGRAM_OWNER_ID
+        sync: false
       - key: LLM_PROVIDER
-        value: groq
-      - key: LLM_MODEL
-        value: llama-3.1-8b-instant
+        value: claude
+      - key: CLAUDE_API_KEY
+        sync: false
+      - key: CLAUDE_MODEL
+        value: claude-sonnet-4-20250514
       - key: GROQ_API_KEY
         sync: false
+      - key: LLM_MODEL
+        value: llama-3.1-8b-instant
       - key: DB_URL
         sync: false
       - key: DB_USERNAME

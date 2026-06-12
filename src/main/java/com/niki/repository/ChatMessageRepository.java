@@ -27,6 +27,10 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, Long> 
             """)
     void deleteByUserTelegramIdAndIdLessThan(@Param("telegramId") Long telegramId, @Param("maxId") Long maxId);
 
+    @Modifying
+    @Query("DELETE FROM ChatMessage m WHERE m.user.telegramId = :telegramId")
+    void deleteAllByUserTelegramId(@Param("telegramId") Long telegramId);
+
     @Query("SELECT COUNT(m) FROM ChatMessage m WHERE m.user.telegramId = :telegramId")
     long countByUserTelegramId(@Param("telegramId") Long telegramId);
 }

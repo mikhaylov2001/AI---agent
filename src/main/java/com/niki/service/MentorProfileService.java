@@ -52,11 +52,12 @@ public class MentorProfileService {
 
     public String buildDefaultProfile() {
         return formatProfile(ProfileData.builder()
-                .mainGoal("Устроиться на работу Java backend разработчиком")
+                .mainGoal("Устроиться Java-разработчиком на сильную/высокооплачиваемую работу")
                 .currentGoals("""
-                        1. Трудоустройство Java backend (резюме, собесы, pet-проекты)
-                        2. Рост в английском
-                        3. Дисциплина и продуктивность""")
+                        1. Сдать экзамен по вождению (теория + практика)
+                        2. Устроиться Java-разработчиком (собесы, резюме, портфолио, LeetCode)
+                        3. Развиваться как предприниматель
+                        4. Прокачать навык общения""")
                 .problems(PLACEHOLDER)
                 .blockers(PLACEHOLDER)
                 .procrastination(PLACEHOLDER)
@@ -65,8 +66,18 @@ public class MentorProfileService {
                 .remember("""
                         - Не любит воду и пустую мотивацию
                         - Нужны структура, честность, конкретика
-                        - Главный приоритет — работа Java backend""")
+                        - Раз в 2–3 дня — задание на общение""")
                 .build());
+    }
+
+    public String formatCoreGoals() {
+        return """
+                🎯 *Твои цели:*
+                
+                🚗 Сдать экзамен по вождению
+                💻 Устроиться Java-разработчиком
+                🚀 Развиваться как предприниматель
+                🗣 Прокачать навык общения""";
     }
 
     public String formatProfile(ProfileData d) {

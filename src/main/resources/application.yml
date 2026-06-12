@@ -23,6 +23,8 @@ spring:
 
 telegram:
   delivery-mode: ${TELEGRAM_DELIVERY_MODE:webhook}
+  owner:
+    id: ${TELEGRAM_OWNER_ID:0}
   bot:
     token: ${TELEGRAM_BOT_TOKEN:}
     username: ${TELEGRAM_BOT_USERNAME:NikiMindBot}
@@ -32,7 +34,7 @@ telegram:
     secret-token: ${TELEGRAM_WEBHOOK_SECRET:}
 
 llm:
-  provider: ${LLM_PROVIDER:groq}
+  provider: ${LLM_PROVIDER:claude}
   api:
     key: ${GROQ_API_KEY:${PERPLEXITY_API_KEY:${OPENAI_API_KEY:}}}
     base-url: ${LLM_API_BASE_URL:https://api.groq.com/openai/v1}
@@ -40,6 +42,9 @@ llm:
     max-tokens: ${LLM_MAX_TOKENS:450}
     temperature: ${LLM_TEMPERATURE:0.35}
     proactive-max-tokens: ${LLM_PROACTIVE_MAX_TOKENS:220}
+  anthropic:
+    key: ${CLAUDE_API_KEY:}
+    model: ${CLAUDE_MODEL:claude-sonnet-4-20250514}
 
 hh:
   client:
@@ -54,7 +59,7 @@ hh:
 niki:
   cron-secret: ${NIKI_CRON_SECRET:}
   state-secret: ${NIKI_STATE_SECRET:${HH_CLIENT_SECRET:}}
-  morning-cron: "0 0 6 * * *"
+  morning-cron: "0 0 5 * * *"
   midday-cron: "0 0 11 * * *"
   evening-cron: "0 0 18 * * *"
   job-alert-cron: "0 0 7,15 * * *"
