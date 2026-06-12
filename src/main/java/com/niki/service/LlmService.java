@@ -451,6 +451,137 @@ public class LlmService {
         };
     }
 
+    public String summarizeMaterialForProfile(String rawText, String fileName, String caption) {
+        if (!StringUtils.hasText(effectiveApiKey())) {
+            return truncate(rawText, 1500);
+        }
+        String prompt = """
+                Сожми материал пользователя для долгосрочной памяти наставника.
+                Только факты: навыки, опыт, цели, личные особенности, проценты тестов, слабые места.
+                Формат: 4–8 коротких буллетов на русском. Без воды.
+                
+                Файл: %s
+                Подпись: %s
+                
+                Текст:
+                %s
+                """.formatted(
+                fileName,
+                StringUtils.hasText(caption) ? caption : "—",
+                truncate(rawText, 5000)
+        );
+        List<Map<String, String>> messages = List.of(
+                Map.of("role", "system", "content", "Ты архивариус профиля. Только буллеты."),
+                Map.of("role", "user", "content", prompt)
+        );
+        String summary = callLlm(messages, 400, 0.2);
+        if (!StringUtils.hasText(summary) || summary.startsWith("⚠️") || summary.contains("не настроен")) {
+            return truncate(rawText, 1500);
+        }
+        return summary;
+    }
+
+    @SuppressWarnings("unchecked")
+    public String extractTextFromImage(byte[] imageBytes, String mimeType, String caption) {
+        if (imageBytes == null || imageBytes.length == 0) {
+            return caption != null ? caption : "";
+        }
+        String base64 = Base64.getEncoder().encodeToString(imageBytes);
+        String mediaType = StringUtils.hasText(mimeType) ? mimeType : "image/jpeg";
+        String userText = StringUtils.hasText(caption)
+                ? "Подпись: " + caption + "\n\nИзвлеки весь текст с картинки (цифры, проценты, подписи). Только факты."
+                : "Извлеки весь текст с картинки (цифры, проценты, подписи). Только факты.";
+
+        if (StringUtils.hasText(apiKey)) {
+            String groq = extractWithGroqVision(base64, mediaType, userText);
+            if (StringUtils.hasText(groq)) {
+                return groq;
+            }
+        }
+        if (StringUtils.hasText(anthropicKey)) {
+            String claude = extractWithClaudeVision(base64, mediaType, userText);
+            if (StringUtils.hasText(claude)) {
+                return claude;
+            }
+        }
+        return caption != null ? caption : "";
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractWithGroqVision(String base64, String mediaType, String userText) {
+        try {
+            String dataUrl = "data:" + mediaType + ";base64," + base64;
+            List<Map<String, Object>> content = List.of(
+                    Map.of("type", "text", "text", userText),
+                    Map.of("type", "image_url", "image_url", Map.of("url", dataUrl))
+            );
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("model", "llama-3.2-90b-vision-preview");
+            body.put("messages", List.of(Map.of("role", "user", "content", content)));
+            body.put("max_tokens", 500);
+            body.put("temperature", 0.1);
+
+            Map<String, Object> response = llmWebClient.post()
+                    .uri("/chat/completions")
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .block();
+            if (response == null) {
+                return "";
+            }
+            List<Map<String, Object>> choices = (List<Map<String, Object>>) response.get("choices");
+            Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
+            return cleanResponse((String) message.get("content"));
+        } catch (Exception e) {
+            log.warn("Groq vision failed: {}", e.getMessage());
+            return "";
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private String extractWithClaudeVision(String base64, String mediaType, String userText) {
+        try {
+            Map<String, Object> body = new LinkedHashMap<>();
+            body.put("model", anthropicModel);
+            body.put("max_tokens", 500);
+            body.put("messages", List.of(Map.of(
+                    "role", "user",
+                    "content", List.of(
+                            Map.of("type", "image", "source", Map.of(
+                                    "type", "base64",
+                                    "media_type", mediaType,
+                                    "data", base64
+                            )),
+                            Map.of("type", "text", "text", userText)
+                    )
+            )));
+
+            Map<String, Object> response = anthropicWebClient.post()
+                    .uri("/v1/messages")
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(Map.class)
+                    .block();
+            if (response == null) {
+                return "";
+            }
+            List<Map<String, Object>> content = (List<Map<String, Object>>) response.get("content");
+            return cleanResponse((String) content.get(0).get("text"));
+        } catch (Exception e) {
+            log.warn("Claude vision failed: {}", e.getMessage());
+            return "";
+        }
+    }
+
+    private static String truncate(String text, int max) {
+        if (text == null) {
+            return "";
+        }
+        String t = text.trim();
+        return t.length() <= max ? t : t.substring(0, max - 1) + "…";
+    }
+
     private void saveMessage(User user, String role, String content) {
         chatMessageRepository.save(ChatMessage.builder()
                 .user(user).role(role).content(content).build());

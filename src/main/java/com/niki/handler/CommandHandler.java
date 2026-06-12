@@ -9,6 +9,7 @@ import com.niki.model.User;
 import com.niki.repository.UserRepository;
 import com.niki.service.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -21,6 +22,7 @@ import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
+@Slf4j
 public class CommandHandler {
 
     private final UserService userService;
@@ -34,6 +36,8 @@ public class CommandHandler {
     private final MentorProfileService mentorProfileService;
     private final ProactiveAgentService proactiveAgentService;
     private final JobApplicationService jobApplicationService;
+    private final UserMaterialIngestService userMaterialIngestService;
+    private final TelegramFileService telegramFileService;
 
     public BotResponse handle(Message message) {
         User user = userService.getOrCreateUser(message);
@@ -88,6 +92,32 @@ public class CommandHandler {
 
         List<Goal> goals = goalService.getActiveGoals(user.getTelegramId());
         return BotResponse.withMainMenu(llmService.chat(user, text, goals));
+    }
+
+    public BotResponse handleDocument(Message message, org.telegram.telegrambots.meta.bots.AbsSender bot) {
+        User user = userService.getOrCreateUser(message);
+        mentorProfileService.ensureDefaultProfile(user);
+        try {
+            return BotResponse.withMainMenu(
+                    userMaterialIngestService.ingestDocument(bot, user, message.getDocument(), message.getCaption()));
+        } catch (Exception e) {
+            log.error("Document ingest failed: {}", e.getMessage(), e);
+            return BotResponse.withMainMenu("❌ Не удалось обработать файл. Попробуй `.txt`, `.md` или PDF с текстом.");
+        }
+    }
+
+    public BotResponse handlePhoto(Message message, org.telegram.telegrambots.meta.bots.AbsSender bot) {
+        User user = userService.getOrCreateUser(message);
+        mentorProfileService.ensureDefaultProfile(user);
+        try {
+            byte[] bytes = telegramFileService.downloadLargestPhoto(bot, message.getPhoto());
+            String mime = telegramFileService.mimeTypeForPhoto(message.getPhoto());
+            return BotResponse.withMainMenu(
+                    userMaterialIngestService.ingestPhoto(user, bytes, mime, message.getCaption()));
+        } catch (Exception e) {
+            log.error("Photo ingest failed: {}", e.getMessage(), e);
+            return BotResponse.withMainMenu("❌ Не удалось обработать фото. Пришли текстом или PDF.");
+        }
     }
 
     public BotResponse handleCallback(Long telegramId, String data) {

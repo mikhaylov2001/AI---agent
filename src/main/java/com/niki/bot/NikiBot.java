@@ -86,8 +86,16 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
                 return;
             }
             var message = update.getMessage();
+            if (message.hasDocument()) {
+                sendResponse(message.getChatId(), commandHandler.handleDocument(message, this));
+                return;
+            }
+            if (message.hasPhoto()) {
+                sendResponse(message.getChatId(), commandHandler.handlePhoto(message, this));
+                return;
+            }
             if (!message.hasText()) {
-                sendPlain(message.getChatId(), "Пока понимаю только текст. Напиши /start или используй кнопки.");
+                sendPlain(message.getChatId(), "Пока понимаю текст и файлы (PDF, txt, md, фото). Напиши /start или пришли документ.");
                 return;
             }
             log.info("Сообщение от {}: {}", message.getFrom().getId(), message.getText());

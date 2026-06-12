@@ -52,9 +52,15 @@ public class HhApplyService {
             }
             sb.append("Нажми кнопку под сообщением или: /use\\_resume [ID]");
             return sb.toString();
+        } catch (WebClientResponseException e) {
+            log.error("Ошибка резюме {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
+            if (e.getStatusCode().value() == 401 || e.getStatusCode().value() == 403) {
+                return "❌ HH-токен устарел. Напиши /connect\\_hh и подключи заново.";
+            }
+            return "Ошибка HH (" + e.getStatusCode().value() + "). Попробуй /connect\\_hh";
         } catch (Exception e) {
-            log.error("Ошибка резюме: {}", e.getMessage());
-            return "Ошибка получения резюме 😅";
+            log.error("Ошибка резюме: {}", e.getMessage(), e);
+            return "Ошибка получения резюме 😅\nПроверь /connect\\_hh или попробуй позже.";
         }
     }
 

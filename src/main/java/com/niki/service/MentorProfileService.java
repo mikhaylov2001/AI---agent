@@ -64,6 +64,47 @@ public class MentorProfileService {
         userRepository.save(user);
     }
 
+    @Transactional
+    public void mergeIntoProfile(User user, String section, String sourceLabel, String content) {
+        ensureDefaultProfile(user);
+        ProfileData data = parseProfile(user.getMentorProfile());
+        String block = formatMaterialBlock(sourceLabel, content);
+        ProfileData updated = switch (section) {
+            case "learning" -> data.withLearningNow(appendSection(data.learningNow(), block));
+            case "problems" -> data.withProblems(appendSection(data.problems(), block));
+            default -> data.withRemember(appendSection(data.remember(), block));
+        };
+        saveFullProfile(user, updated);
+    }
+
+    @Transactional
+    public void appendMemoryNote(User user, String sourceLabel, String content) {
+        String note = formatMaterialBlock(sourceLabel, content);
+        String existing = user.getMemorySummary();
+        String merged = StringUtils.hasText(existing)
+                ? existing.trim() + "\n\n" + note
+                : note;
+        if (merged.length() > 8000) {
+            merged = merged.substring(merged.length() - 8000);
+        }
+        user.setMemorySummary(merged);
+        userRepository.save(user);
+    }
+
+    private static String formatMaterialBlock(String sourceLabel, String content) {
+        return "• [" + sourceLabel + "]\n" + content.trim();
+    }
+
+    private static String appendSection(String current, String addition) {
+        if (!StringUtils.hasText(current) || PLACEHOLDER.equals(current.trim())) {
+            return addition;
+        }
+        if (current.contains(addition.substring(0, Math.min(40, addition.length())))) {
+            return current;
+        }
+        return current.trim() + "\n\n" + addition;
+    }
+
     public String buildDefaultProfile() {
         return formatProfile(ProfileData.builder()
                 .mainGoal("Устроиться Java-разработчиком на сильную/высокооплачиваемую работу")
