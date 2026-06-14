@@ -36,6 +36,9 @@ public class LlmService {
     @Value("${llm.api.model}")
     private String model;
 
+    @Value("${llm.api.fast-model:llama-3.1-8b-instant}")
+    private String fastModel;
+
     @Value("${llm.api.max-tokens}")
     private int maxTokens;
 
@@ -51,8 +54,11 @@ public class LlmService {
     @Value("${llm.anthropic.key:}")
     private String anthropicKey;
 
-    @Value("${llm.anthropic.model:claude-sonnet-4-6}")
+    @Value("${llm.anthropic.model:claude-opus-4-8}")
     private String anthropicModel;
+
+    @Value("${llm.anthropic.fast-model:claude-sonnet-4-6}")
+    private String anthropicFastModel;
 
     @Value("${llm.vision.groq-model:llama-3.2-11b-vision-preview}")
     private String groqVisionModel;
@@ -81,7 +87,19 @@ public class LlmService {
     }
 
     private String effectiveModel() {
+        return smartModelName();
+    }
+
+    private String smartModelName() {
         return isClaude() ? anthropicModel : model;
+    }
+
+    private String fastModelName() {
+        return isClaude() ? anthropicFastModel : fastModel;
+    }
+
+    private enum LlmTier {
+        SMART, FAST
     }
 
     @Transactional
@@ -98,7 +116,7 @@ public class LlmService {
                 Map.of("role", "user", "content",
                         "[АВТОПИЛОТ] " + task + "\n\nОтвет СТРОГО в формате:\n▶️ *Сейчас*\nодно конкретное действие")
         );
-        String llm = callLlm(messages, proactiveMaxTokens, 0.3);
+        String llm = callLlm(messages, proactiveMaxTokens, 0.3, LlmTier.FAST);
         if (MentorResponseFormatter.shouldSkipFormatting(llm)) {
             return fallback;
         }
@@ -153,7 +171,7 @@ public class LlmService {
         saveMessage(user, "user", effectiveText);
         List<Map<String, String>> messages = buildMessages(user, effectiveText, goals, intent, focus);
         int tokens = tokensForIntent(intent);
-        String llm = callLlm(messages, tokens, temperature);
+        String llm = callLlm(messages, tokens, temperature, LlmTier.SMART);
         String reply = MentorResponseFormatter.shouldSkipFormatting(llm)
                 ? llm
                 : MentorResponseFormatter.format(llm, intent);
@@ -350,9 +368,9 @@ public class LlmService {
 
     private int tokensForIntent(ChatIntent intent) {
         return switch (intent) {
-            case NEXT_STEP, CHECK_IN -> 180;
-            case LEARNING, INTERVIEW -> 350;
-            case MEMORY -> 300;
+            case NEXT_STEP, CHECK_IN -> 220;
+            case LEARNING, INTERVIEW -> 500;
+            case MEMORY -> 350;
             default -> maxTokens;
         };
     }
@@ -381,7 +399,7 @@ public class LlmService {
                 Map.of("role", "user", "content", prompt)
         );
         try {
-            String raw = callLlm(messages, 10, 0.1);
+            String raw = callLlm(messages, 10, 0.1, LlmTier.FAST);
             String digits = raw.replaceAll("[^0-9]", "");
             if (digits.isEmpty()) {
                 return 50;
@@ -424,7 +442,7 @@ public class LlmService {
                         "Ты HR-консультант. Краткие конкретные письма без клише и ссылок."),
                 Map.of("role", "user", "content", prompt)
         );
-        String letter = callLlm(messages);
+        String letter = callLlm(messages, LlmTier.SMART);
         saveMessage(user, "assistant", "[LETTER]" + letter);
         return letter;
     }
@@ -437,29 +455,31 @@ public class LlmService {
                 Map.of("role", "system", "content", "Перепиши сопроводительное письмо по инструкции. Только текст письма."),
                 Map.of("role", "user", "content", "Письмо:\n" + letter + "\n\nИнструкция: " + instruction)
         );
-        String updated = callLlm(messages);
+        String updated = callLlm(messages, LlmTier.SMART);
         saveMessage(user, "assistant", "[LETTER]" + updated);
         return updated;
     }
 
     @SuppressWarnings("unchecked")
-    private String callLlm(List<Map<String, String>> messages) {
-        return callLlm(messages, maxTokens, temperature);
+    private String callLlm(List<Map<String, String>> messages, LlmTier tier) {
+        return callLlm(messages, maxTokens, temperature, tier);
     }
 
     @SuppressWarnings("unchecked")
-    private String callLlm(List<Map<String, String>> messages, int tokens, double temp) {
-        return callLlmWithRetry(messages, tokens, temp, 1);
+    private String callLlm(List<Map<String, String>> messages, int tokens, double temp, LlmTier tier) {
+        return callLlmWithRetry(messages, tokens, temp, tier, 1, null);
     }
 
     @SuppressWarnings("unchecked")
-    private String callLlmWithRetry(List<Map<String, String>> messages, int tokens, double temp, int retriesLeft) {
+    private String callLlmWithRetry(List<Map<String, String>> messages, int tokens, double temp,
+                                    LlmTier tier, int retriesLeft, String modelOverride) {
+        String modelName = modelOverride != null ? modelOverride : modelForTier(tier);
         try {
             if (isClaude()) {
-                return callAnthropic(messages, tokens, temp);
+                return callAnthropic(messages, tokens, temp, modelName);
             }
             Map<String, Object> body = new LinkedHashMap<>();
-            body.put("model", model);
+            body.put("model", modelName);
             body.put("messages", messages);
             body.put("max_tokens", tokens);
             body.put("temperature", temp);
@@ -477,15 +497,22 @@ public class LlmService {
             Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
             return cleanResponse((String) message.get("content"));
         } catch (WebClientResponseException e) {
+            if (e.getStatusCode().value() == 404 && modelOverride == null
+                    && tier == LlmTier.SMART && isClaude()
+                    && anthropicModel.toLowerCase(Locale.ROOT).contains("opus")
+                    && !anthropicFastModel.equals(anthropicModel)) {
+                log.warn("Opus недоступен (404), fallback на {}", anthropicFastModel);
+                return callLlmWithRetry(messages, tokens, temp, tier, retriesLeft, anthropicFastModel);
+            }
             if (e.getStatusCode().value() == 429 && retriesLeft > 0) {
                 log.warn("{} 429 — retry через 2 сек", provider);
                 sleepQuietly(2000);
-                return callLlmWithRetry(messages, tokens, temp, retriesLeft - 1);
+                return callLlmWithRetry(messages, tokens, temp, tier, retriesLeft - 1, modelOverride);
             }
-            log.error("Ошибка {} {}: {}", provider, e.getStatusCode(), e.getResponseBodyAsString());
-            return mapLlmError(e);
+            log.error("Ошибка {} {} (model={}): {}", provider, e.getStatusCode(), modelName, e.getResponseBodyAsString());
+            return mapLlmError(e, modelName);
         } catch (Exception e) {
-            log.error("Ошибка {}: {}", provider, e.getMessage());
+            log.error("Ошибка {} (model={}): {}", provider, modelName, e.getMessage());
             if (e.getClass().getSimpleName().contains("Timeout") || e.getMessage() != null && e.getMessage().contains("Timeout")) {
                 return "⚠️ ИИ долго думает — нажми кнопку ещё раз или /start.";
             }
@@ -494,8 +521,12 @@ public class LlmService {
         }
     }
 
+    private String modelForTier(LlmTier tier) {
+        return tier == LlmTier.FAST ? fastModelName() : smartModelName();
+    }
+
     @SuppressWarnings("unchecked")
-    private String callAnthropic(List<Map<String, String>> messages, int tokens, double temp) {
+    private String callAnthropic(List<Map<String, String>> messages, int tokens, double temp, String modelName) {
         String system = messages.stream()
                 .filter(m -> "system".equals(m.get("role")))
                 .map(m -> m.get("content"))
@@ -508,7 +539,7 @@ public class LlmService {
             }
         }
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("model", anthropicModel);
+        body.put("model", modelName);
         body.put("max_tokens", tokens);
         body.put("system", system);
         body.put("messages", chatMessages);
@@ -562,7 +593,7 @@ public class LlmService {
         return cleaned;
     }
 
-    private String mapLlmError(WebClientResponseException e) {
+    private String mapLlmError(WebClientResponseException e, String modelName) {
         int status = e.getStatusCode().value();
         String keyHint = switch (provider.toLowerCase(Locale.ROOT)) {
             case "claude", "anthropic" -> "CLAUDE_API_KEY (console.anthropic.com)";
@@ -574,7 +605,7 @@ public class LlmService {
             case 401 -> "Неверный ключ. Проверь " + keyHint + ".";
             case 403 -> "Доступ запрещён (403). Проверь лимиты провайдера.";
             case 429 -> "⚠️ Лимит запросов. Подожди 30 сек и нажми снова.";
-            case 404 -> "Модель %s не найдена. Проверь LLM_MODEL / CLAUDE_MODEL.".formatted(effectiveModel());
+            case 404 -> "Модель %s не найдена. Проверь CLAUDE_MODEL / LLM_MODEL.".formatted(modelName);
             default -> provider + " вернул ошибку %d. Смотри логи сервера.".formatted(status);
         };
     }
@@ -602,7 +633,7 @@ public class LlmService {
                 Map.of("role", "system", "content", "Ты архивариус профиля. Только буллеты."),
                 Map.of("role", "user", "content", prompt)
         );
-        String summary = callLlm(messages, 400, 0.2);
+        String summary = callLlm(messages, 400, 0.2, LlmTier.FAST);
         if (!StringUtils.hasText(summary) || summary.startsWith("⚠️") || summary.contains("не настроен")) {
             return truncate(rawText, 1500);
         }
@@ -770,7 +801,7 @@ public class LlmService {
                 Map.of("role", "user", "content", "Диалог:\n" + dialogue)
         );
         try {
-            String summary = cleanResponse(callLlm(summaryRequest, 300, 0.3));
+            String summary = cleanResponse(callLlm(summaryRequest, 300, 0.3, LlmTier.FAST));
             if (!StringUtils.hasText(summary) || summary.startsWith("⚠️") || summary.contains("не настроен")) {
                 return;
             }
