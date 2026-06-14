@@ -26,9 +26,12 @@ public class JobConversationHandler {
             return Optional.empty();
         }
         String lower = JobTextPatterns.normalize(text);
+        if (JobTextPatterns.isLearningMaterial(text)) {
+            return Optional.empty();
+        }
         String storedTopic = conversationFocusService.loadTopicId(user);
         boolean jobThread = JobTextPatterns.isJobRelated(lower)
-                || "jobs".equals(storedTopic)
+                || ("jobs".equals(storedTopic) && JobTextPatterns.isJobFollowUp(lower))
                 || JobTextPatterns.isJobThreadContinuation(lower);
 
         if (!jobThread) {

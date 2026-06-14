@@ -40,6 +40,7 @@ public class CommandHandler {
     private final UserMaterialIngestService userMaterialIngestService;
     private final TelegramFileService telegramFileService;
     private final JobConversationHandler jobConversationHandler;
+    private final LearningMaterialHandler learningMaterialHandler;
 
     public BotResponse handle(Message message) {
         User user = userService.getOrCreateUser(message);
@@ -91,6 +92,11 @@ public class CommandHandler {
                 return handleCommand(normalized, user);
             }
             return applyToVacancy(user, text);
+        }
+
+        Optional<BotResponse> learningReply = learningMaterialHandler.tryHandle(user, text);
+        if (learningReply.isPresent()) {
+            return learningReply.get();
         }
 
         Optional<BotResponse> jobReply = jobConversationHandler.tryHandle(user, text);

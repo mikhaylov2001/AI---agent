@@ -22,8 +22,58 @@ final class JobTextPatterns {
         return containsAny(lower, "мои резюме", "список резюме", "hh_resumes", "hh resumes");
     }
 
+    /** Список изученных тем / roadmap — не HH-поиск. */
+    static boolean isLearningMaterial(String text) {
+        if (!StringUtils.hasText(text)) {
+            return false;
+        }
+        String lower = normalize(text);
+        if (containsAny(lower,
+                "изучен", "theory", "теория", "прогресс по", "roadmap", "чеклист", "чек-лист",
+                "пройден", "освоил", "учебный план", "план обучения", "скидываю тем",
+                "изученные тем", "что прошёл", "что прошел", "мой прогресс", "leetcode - топ",
+                "leetcode топ", "неделя 1", "неделя 2", "неделя 3", "неделя 4",
+                "неделя 5", "неделя 6", "неделя 7", "неделя 8")) {
+            return true;
+        }
+        long checks = text.chars().filter(c -> c == '✅' || c == '✔' || c == '☑').count();
+        if (checks >= 2) {
+            return true;
+        }
+        String[] lines = text.split("\n");
+        if (lines.length >= 3 && countTechStudyLines(lines) >= 3) {
+            return true;
+        }
+        if (lines.length >= 2 && NUMBERED_TECH_LINE.matcher(text).find() && countTechStudyLines(lines) >= 2) {
+            return true;
+        }
+        return false;
+    }
+
+    private static final Pattern NUMBERED_TECH_LINE = Pattern.compile(
+            "(?i)(java|spring|kafka|docker|kubernetes|k8s|leetcode|hibernate|redis|postgres|cap-теор|system design)");
+
+    private static int countTechStudyLines(String[] lines) {
+        int n = 0;
+        for (String line : lines) {
+            String l = line.toLowerCase(Locale.ROOT);
+            if (l.isBlank() || l.startsWith("---")) {
+                continue;
+            }
+            if (NUMBERED_TECH_LINE.matcher(l).find()
+                    || containsAny(l, "core java", "spring boot", "микросервис", "outbox", "saga",
+                    "circuit breaker", "rate limiter", "mock-собес", "ci/cd")) {
+                n++;
+            }
+        }
+        return n;
+    }
+
     static boolean isJobRelated(String lower) {
         if (isResumeListRequest(lower)) {
+            return false;
+        }
+        if (isLearningMaterial(lower)) {
             return false;
         }
         if (containsAny(lower,
@@ -39,7 +89,12 @@ final class JobTextPatterns {
         if (lower.contains("developer") || lower.contains("develover") || lower.contains("develo")) {
             return true;
         }
-        if (lower.contains("java") && containsAny(lower, "dev", "backend", "spring", "работ", "ваканс", "hh")) {
+        if (lower.contains("java") && containsAny(lower, "dev", "backend", "работ", "ваканс", "hh")
+                && !containsAny(lower, "core java", "java core", "теория", "theory", "изучен", "пройден")) {
+            return true;
+        }
+        if (lower.contains("java") && lower.contains("spring")
+                && containsAny(lower, "developer", "backend", "ваканс", "hh", "работ", "ищу")) {
             return true;
         }
         return wantsBotToSearch(lower)
@@ -81,7 +136,19 @@ final class JobTextPatterns {
                 "почему не", "не можешь", "нет интернета", "не открываешь");
     }
 
+    /** Короткое продолжение диалога про вакансии (только если уже в теме jobs). */
+    static boolean isJobFollowUp(String lower) {
+        return containsAny(lower,
+                "ещё", "еще", "дальше", "следующ", "другие ваканс", "найди", "ищи", "подбери",
+                "отклик", "hh", "headhunter", "ваканс", "удалён", "удален", "remote",
+                "java backend", "spring boot developer", "middle", "junior", "отправь ваканс",
+                "пришли ваканс", "дай ваканс", "покажи ваканс", "открой сам", "сам найди");
+    }
+
     static String extractSearchQuery(String text, String savedQuery) {
+        if (isLearningMaterial(text)) {
+            return defaultQuery(savedQuery);
+        }
         if (!StringUtils.hasText(text)) {
             return defaultQuery(savedQuery);
         }
@@ -94,7 +161,7 @@ final class JobTextPatterns {
         if (lower.contains("python") && lower.contains("backend")) {
             return "Python backend developer";
         }
-        if (lower.contains("spring")) {
+        if (lower.contains("spring") && containsAny(lower, "developer", "backend", "ваканс", "работ", "ищу")) {
             return "Java Spring Boot developer";
         }
         if (lower.contains("backend") || lower.contains("java") || lower.contains("developer")

@@ -156,6 +156,9 @@ public class ConversationFocusService {
     }
 
     String detectTopicFromText(String lower) {
+        if (JobTextPatterns.isLearningMaterial(lower)) {
+            return "java_career";
+        }
         if (JobTextPatterns.isJobRelated(lower)) {
             return "jobs";
         }
