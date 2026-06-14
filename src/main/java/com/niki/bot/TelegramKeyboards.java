@@ -14,18 +14,13 @@ import java.util.Map;
 
 public final class TelegramKeyboards {
 
-    public static final String BTN_NEXT_STEP = "📋 След. шаг";
-    public static final String BTN_CHECKIN = "📊 Чек-ин";
     public static final String BTN_GOALS = "🎯 Мои цели";
     public static final String BTN_PROFILE = "🧠 Профиль";
     public static final String BTN_JOBS = "💼 Вакансии";
-    public static final String BTN_LEARNING = "📚 Учёба";
     public static final String BTN_SETUP_PROFILE = "📝 Настроить профиль";
     public static final String BTN_CONNECT_HH = "🔗 HH";
     public static final String BTN_RESUMES = "📄 Резюме";
-    public static final String BTN_HELP = "❓ Помощь";
     public static final String BTN_APPLICATIONS = "📋 Отклики";
-    public static final String BTN_INTERVIEW = "🎤 Собес";
 
     private TelegramKeyboards() {
     }
@@ -36,11 +31,8 @@ public final class TelegramKeyboards {
         keyboard.setOneTimeKeyboard(false);
         keyboard.setSelective(false);
         keyboard.setKeyboard(List.of(
-                row(BTN_NEXT_STEP, BTN_CHECKIN),
                 row(BTN_GOALS, BTN_PROFILE),
-                row(BTN_JOBS, BTN_APPLICATIONS),
-                row(BTN_LEARNING, BTN_INTERVIEW),
-                row(BTN_CONNECT_HH, BTN_HELP)
+                row(BTN_JOBS, BTN_APPLICATIONS)
         ));
         return keyboard;
     }
@@ -49,9 +41,9 @@ public final class TelegramKeyboards {
         ReplyKeyboardMarkup keyboard = new ReplyKeyboardMarkup();
         keyboard.setResizeKeyboard(true);
         keyboard.setKeyboard(List.of(
-                row(BTN_JOBS, BTN_RESUMES),
-                row(BTN_APPLICATIONS, BTN_CONNECT_HH),
-                row(BTN_NEXT_STEP, "◀️ Главное меню")
+                row(BTN_JOBS, BTN_APPLICATIONS),
+                row(BTN_CONNECT_HH, BTN_RESUMES),
+                row("◀️ Главное меню")
         ));
         return keyboard;
     }
@@ -60,17 +52,14 @@ public final class TelegramKeyboards {
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
         markup.setKeyboard(List.of(
                 List.of(
-                        inlineButton(BTN_NEXT_STEP, "next_step"),
-                        inlineButton(BTN_CHECKIN, "checkin")
-                ),
-                List.of(
                         inlineButton(BTN_GOALS, "goals"),
                         inlineButton(BTN_PROFILE, "profile")
                 ),
                 List.of(
-                        inlineButton(BTN_SETUP_PROFILE, "setup_profile"),
-                        inlineButton(BTN_JOBS, "jobs")
-                )
+                        inlineButton(BTN_JOBS, "jobs"),
+                        inlineButton(BTN_APPLICATIONS, "applications")
+                ),
+                List.of(inlineButton(BTN_SETUP_PROFILE, "setup_profile"))
         ));
         return markup;
     }
@@ -79,12 +68,12 @@ public final class TelegramKeyboards {
         InlineKeyboardMarkup markup = new InlineKeyboardMarkup();
         markup.setKeyboard(List.of(
                 List.of(
-                        inlineButton("✅ Автопилот + алерты", "autopilot:on:both"),
+                        inlineButton("✅ Авто-отклики + алерты", "autopilot:on:both"),
                         inlineButton("🔔 Только алерты", "autopilot:on:alerts")
                 ),
                 List.of(
-                        inlineButton("⏸ Без автопилота", "autopilot:off"),
-                        inlineButton(BTN_SETUP_PROFILE, "setup_profile")
+                        inlineButton("⏸ Выкл", "autopilot:off"),
+                        inlineButton(BTN_CONNECT_HH, "connect_hh")
                 )
         ));
         return markup;
@@ -96,8 +85,9 @@ public final class TelegramKeyboards {
                 List.of(inlineButton(BTN_SETUP_PROFILE, "setup_profile")),
                 List.of(
                         inlineButton(BTN_GOALS, "goals"),
-                        inlineButton(BTN_CHECKIN, "checkin")
-                )
+                        inlineButton(BTN_CONNECT_HH, "connect_hh")
+                ),
+                List.of(inlineButton(BTN_RESUMES, "hh_resumes"))
         ));
         return markup;
     }

@@ -144,14 +144,13 @@ public class UserMaterialIngestService {
             return "remember";
         }
         if (hay.contains("spring") || hay.contains("java") || hay.contains("учеб") || hay.contains("конспект")) {
-            return "learning";
+            return "remember";
         }
         return "remember";
     }
 
     static String sectionLabel(String section) {
         return switch (section) {
-            case "learning" -> "Чему учусь сейчас";
             case "problems" -> "Проблемы";
             default -> "Важно помнить";
         };

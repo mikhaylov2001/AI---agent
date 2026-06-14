@@ -31,7 +31,6 @@ public class MentorProfileService {
             "ЧТО ЧАЩЕ ТОРМОЗИТ",
             "КАК ОБЫЧНО СРЫВАЮСЬ",
             "ЧТО ВОЗВРАЩАЕТ В ФОКУС",
-            "ЧЕМУ УЧУСЬ СЕЙЧАС",
             "ВАЖНО ПОМНИТЬ"
     );
 
@@ -71,7 +70,6 @@ public class MentorProfileService {
         ProfileData data = parseProfile(user.getMentorProfile());
         String block = formatMaterialBlock(sourceLabel, content);
         ProfileData updated = switch (section) {
-            case "learning" -> data.withLearningNow(appendSection(data.learningNow(), block));
             case "problems" -> data.withProblems(appendSection(data.problems(), block));
             default -> data.withRemember(appendSection(data.remember(), block));
         };
@@ -110,15 +108,12 @@ public class MentorProfileService {
         return formatProfile(ProfileData.builder()
                 .mainGoal("Устроиться Java-разработчиком на сильную/высокооплачиваемую работу")
                 .currentGoals("""
-                        1. Сдать экзамен по вождению (теория + практика)
-                        2. Устроиться Java-разработчиком (собесы, резюме, портфолио, LeetCode)
-                        3. Развиваться как предприниматель
-                        4. Прокачать навык общения""")
+                        1. Устроиться Java-разработчиком (собесы, резюме, отклики на HH)
+                        2. Поддерживать активный поиск работы""")
                 .problems(PLACEHOLDER)
                 .blockers(PLACEHOLDER)
                 .procrastination(PLACEHOLDER)
                 .focusRestore(PLACEHOLDER)
-                .learningNow("Java backend, Spring Boot, проекты svoi-mastera / niki-bot / FinTracker")
                 .remember("""
                         - Не любит воду и пустую мотивацию
                         - Нужны структура, честность, конкретика
@@ -130,10 +125,9 @@ public class MentorProfileService {
         return """
                 🎯 *Твои цели:*
                 
-                🚗 Сдать экзамен по вождению
                 💻 Устроиться Java-разработчиком
-                🚀 Развиваться как предприниматель
-                🗣 Прокачать навык общения""";
+                📋 Активные отклики на HH
+                🎯 Прогресс по карьере — жми 🎯 *Мои цели*""";
     }
 
     public String formatProfile(ProfileData d) {
@@ -156,14 +150,11 @@ public class MentorProfileService {
                 ЧТО ВОЗВРАЩАЕТ В ФОКУС:
                 %s
 
-                ЧЕМУ УЧУСЬ СЕЙЧАС:
-                %s
-
                 ВАЖНО ПОМНИТЬ:
                 %s
                 """.formatted(
                 d.mainGoal(), d.currentGoals(), d.problems(), d.blockers(),
-                d.procrastination(), d.focusRestore(), d.learningNow(), d.remember()
+                d.procrastination(), d.focusRestore(), d.remember()
         ).trim();
     }
 
@@ -184,7 +175,6 @@ public class MentorProfileService {
         appendIfFilled(sb, "🐢", "Что тормозит", data.blockers());
         appendIfFilled(sb, "💥", "Как срываюсь", data.procrastination());
         appendIfFilled(sb, "🔋", "Что возвращает фокус", data.focusRestore());
-        appendIfFilled(sb, "📚", "Учусь сейчас", data.learningNow());
         appendIfFilled(sb, "💡", "Важно помнить", data.remember());
 
         if (sb.length() <= "🧠 *Твой профиль*\n\n".length()) {
@@ -229,7 +219,6 @@ public class MentorProfileService {
                     
                     Одним сообщением:
                     • что возвращает в фокус
-                    • чему учишься
                     • что важно помнить о тебе""";
             default -> """
                     ✅ *Профиль сохранён*
@@ -252,8 +241,8 @@ public class MentorProfileService {
                 yield current.withProblems(p[0]).withBlockers(p[1]).withProcrastination(p[2]);
             }
             case 4 -> {
-                String[] p = splitIntoThree(text);
-                yield current.withFocusRestore(p[0]).withLearningNow(p[1]).withRemember(p[2]);
+                String[] p = splitIntoTwo(text);
+                yield current.withFocusRestore(p[0]).withRemember(p[1]);
             }
             default -> current;
         };
@@ -273,7 +262,6 @@ public class MentorProfileService {
                 .blockers(extractSection(raw, "ЧТО ЧАЩЕ ТОРМОЗИТ"))
                 .procrastination(extractSection(raw, "КАК ОБЫЧНО СРЫВАЮСЬ"))
                 .focusRestore(extractSection(raw, "ЧТО ВОЗВРАЩАЕТ В ФОКУС"))
-                .learningNow(extractSection(raw, "ЧЕМУ УЧУСЬ СЕЙЧАС"))
                 .remember(extractSection(raw, "ВАЖНО ПОМНИТЬ"))
                 .build();
     }
@@ -352,6 +340,21 @@ public class MentorProfileService {
                 || t.equals("оставляем") || t.equals("yes");
     }
 
+    private static String[] splitIntoTwo(String text) {
+        String[] lines = text.lines().map(String::trim).filter(StringUtils::hasText).toArray(String[]::new);
+        if (lines.length >= 2) {
+            int mid = (lines.length + 1) / 2;
+            return new String[]{
+                    join(lines, 0, mid),
+                    join(lines, mid, lines.length)
+            };
+        }
+        if (lines.length == 1) {
+            return new String[]{lines[0], PLACEHOLDER};
+        }
+        return new String[]{PLACEHOLDER, PLACEHOLDER};
+    }
+
     private static String[] splitIntoThree(String text) {
         String[] lines = text.lines().map(String::trim).filter(StringUtils::hasText).toArray(String[]::new);
         if (lines.length >= 3) {
@@ -389,7 +392,6 @@ public class MentorProfileService {
             String blockers,
             String procrastination,
             String focusRestore,
-            String learningNow,
             String remember
     ) {
         public static ProfileDataBuilder builder() {
@@ -404,41 +406,36 @@ public class MentorProfileService {
                     .blockers(PLACEHOLDER)
                     .procrastination(PLACEHOLDER)
                     .focusRestore(PLACEHOLDER)
-                    .learningNow(PLACEHOLDER)
                     .remember(PLACEHOLDER)
                     .build();
         }
 
         public ProfileData withMainGoal(String v) {
-            return new ProfileData(v, currentGoals, problems, blockers, procrastination, focusRestore, learningNow, remember);
+            return new ProfileData(v, currentGoals, problems, blockers, procrastination, focusRestore, remember);
         }
 
         public ProfileData withCurrentGoals(String v) {
-            return new ProfileData(mainGoal, v, problems, blockers, procrastination, focusRestore, learningNow, remember);
+            return new ProfileData(mainGoal, v, problems, blockers, procrastination, focusRestore, remember);
         }
 
         public ProfileData withProblems(String v) {
-            return new ProfileData(mainGoal, currentGoals, v, blockers, procrastination, focusRestore, learningNow, remember);
+            return new ProfileData(mainGoal, currentGoals, v, blockers, procrastination, focusRestore, remember);
         }
 
         public ProfileData withBlockers(String v) {
-            return new ProfileData(mainGoal, currentGoals, problems, v, procrastination, focusRestore, learningNow, remember);
+            return new ProfileData(mainGoal, currentGoals, problems, v, procrastination, focusRestore, remember);
         }
 
         public ProfileData withProcrastination(String v) {
-            return new ProfileData(mainGoal, currentGoals, problems, blockers, v, focusRestore, learningNow, remember);
+            return new ProfileData(mainGoal, currentGoals, problems, blockers, v, focusRestore, remember);
         }
 
         public ProfileData withFocusRestore(String v) {
-            return new ProfileData(mainGoal, currentGoals, problems, blockers, procrastination, v, learningNow, remember);
-        }
-
-        public ProfileData withLearningNow(String v) {
-            return new ProfileData(mainGoal, currentGoals, problems, blockers, procrastination, focusRestore, v, remember);
+            return new ProfileData(mainGoal, currentGoals, problems, blockers, procrastination, v, remember);
         }
 
         public ProfileData withRemember(String v) {
-            return new ProfileData(mainGoal, currentGoals, problems, blockers, procrastination, focusRestore, learningNow, v);
+            return new ProfileData(mainGoal, currentGoals, problems, blockers, procrastination, focusRestore, v);
         }
 
         public static class ProfileDataBuilder {
@@ -448,7 +445,6 @@ public class MentorProfileService {
             private String blockers = PLACEHOLDER;
             private String procrastination = PLACEHOLDER;
             private String focusRestore = PLACEHOLDER;
-            private String learningNow = PLACEHOLDER;
             private String remember = PLACEHOLDER;
 
             public ProfileDataBuilder mainGoal(String v) { this.mainGoal = v; return this; }
@@ -457,12 +453,11 @@ public class MentorProfileService {
             public ProfileDataBuilder blockers(String v) { this.blockers = v; return this; }
             public ProfileDataBuilder procrastination(String v) { this.procrastination = v; return this; }
             public ProfileDataBuilder focusRestore(String v) { this.focusRestore = v; return this; }
-            public ProfileDataBuilder learningNow(String v) { this.learningNow = v; return this; }
             public ProfileDataBuilder remember(String v) { this.remember = v; return this; }
 
             public ProfileData build() {
                 return new ProfileData(mainGoal, currentGoals, problems, blockers,
-                        procrastination, focusRestore, learningNow, remember);
+                        procrastination, focusRestore, remember);
             }
         }
     }

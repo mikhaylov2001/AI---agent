@@ -40,7 +40,6 @@ public class CommandHandler {
     private final UserMaterialIngestService userMaterialIngestService;
     private final TelegramFileService telegramFileService;
     private final JobConversationHandler jobConversationHandler;
-    private final LearningMaterialHandler learningMaterialHandler;
 
     public BotResponse handle(Message message) {
         User user = userService.getOrCreateUser(message);
@@ -92,11 +91,6 @@ public class CommandHandler {
                 return handleCommand(normalized, user);
             }
             return applyToVacancy(user, text);
-        }
-
-        Optional<BotResponse> learningReply = learningMaterialHandler.tryHandle(user, text);
-        if (learningReply.isPresent()) {
-            return learningReply.get();
         }
 
         Optional<BotResponse> jobReply = jobConversationHandler.tryHandle(user, text);
@@ -206,11 +200,6 @@ public class CommandHandler {
                 startProfileSetup(user);
                 yield BotResponse.withMainMenu(mentorProfileService.profileSetupQuestion(1));
             }
-            case "/next_step", "/nextstep" -> mentorChat(user, "Дай один конкретный следующий шаг.", ChatIntent.NEXT_STEP);
-            case "/checkin", "/check_in" -> mentorChat(user, "Хочу чек-ин.", ChatIntent.CHECK_IN);
-            case "/learning", "/study" -> mentorChat(user, "Помоги с учёбой.", ChatIntent.LEARNING);
-            case "/interview" -> mentorChat(user, StringUtils.hasText(args) ? args : "Подготовь меня к собеседованию Java backend.", ChatIntent.INTERVIEW);
-            case "/memory" -> mentorChat(user, "", ChatIntent.MEMORY);
             case "/цели", "/goals" -> goalsResponse(user, null);
             case "/сброс", "/сбросить", "/reset" -> {
                 llmService.clearConversationMemory(user);
@@ -439,13 +428,16 @@ public class CommandHandler {
             case "on:both" -> {
                 proactiveAgentService.setAutopilot(user, true);
                 proactiveAgentService.setJobAlerts(user, true);
-                yield BotResponse.withMainMenu("✅ Автопилот и алерты включены!\n\n/job\\_query — настроить запрос вакансий");
+                yield BotResponse.withMainMenu(
+                        "✅ *Авто-отклики и алерты включены!*\n\n"
+                                + "Подключи HH (/connect\\_hh) и выбери резюме в 🧠 Профиль.\n"
+                                + "/job\\_query — настроить поиск");
             }
             case "on:alerts" -> BotResponse.withMainMenu(proactiveAgentService.setJobAlerts(user, true));
             case "off" -> {
                 proactiveAgentService.setAutopilot(user, false);
                 proactiveAgentService.setJobAlerts(user, false);
-                yield BotResponse.withMainMenu("⏸ Автопилот выключен. Включить: /autopilot on");
+                yield BotResponse.withMainMenu("⏸ Автоматизация выключена. /autopilot on — включить авто-отклики");
             }
             default -> BotResponse.withMainMenu(proactiveAgentService.autopilotStatus(user));
         };
@@ -564,23 +556,18 @@ public class CommandHandler {
         return BotResponse.withMainMenu("⏭ Пропущено. Ищем дальше — 💼 Вакансии");
     }
 
-    private BotResponse mentorChat(User user, String text, ChatIntent intent) {
-        List<Goal> goals = goalService.getActiveGoals(user.getTelegramId());
-        return BotResponse.withMainMenu(llmService.chat(user, text, goals, intent));
-    }
-
     private BotResponse startMessage(User user) {
         mentorProfileService.ensureDefaultProfile(user);
         String welcome = String.format("""
-                Привет, %s! 👋 Я *Ники* — твой наставник и второй мозг.
+                Привет, %s! 👋 Я *Ники* — карьерный ассистент.
                 
-                *Главная цель:* Java backend разработчик.
+                *Что умею:*
+                🎯 цели · 💼 вакансии HH · 📋 отклики · 🧠 профиль
+                _Авто-отклики — если подключишь HH и выберешь резюме_
                 
-                👇 *Навигация* — кнопки внизу:
-                📋 След. шаг · 📊 Чек-ин · 🎯 Цели · 🧠 Профиль
-                💼 Вакансии · 📋 Отклики · 🎤 Собес · 📚 Учёба
-                
-                _Включить автопилот и алерты — кнопки ниже_
+                👇 *Кнопки:*
+                🎯 Мои цели · 🧠 Профиль
+                💼 Вакансии · 📋 Отклики
                 """, user.getFirstName());
 
         if (!mentorProfileService.isProfileConfigured(user)) {
@@ -597,22 +584,20 @@ public class CommandHandler {
 
     private BotResponse helpMessage() {
         return BotResponse.withMainMenu("""
-                📖 *Навигация Ники*
+                📖 *Ники — карьера*
                 
-                *Кнопки:*
-                📋 След. шаг · 📊 Чек-ин · 🎯 Цели · 🧠 Профиль
-                💼 Вакансии · 📋 Отклики · 🎤 Собес · 📚 Учёба
+                🎯 *Цели* — прогресс и напоминания
+                💼 *Вакансии* — поиск на HH, фильтры
+                📋 *Отклики* — история и статусы
+                🧠 *Профиль* — резюме, HH, настройки
                 
-                *Автопилот:*
-                /autopilot on|off — утро 8:00, день 14:00, вечер 21:00 MSK
-                /цели · /сброс — цели и сброс памяти
-                /job\\_alerts on|off · /job\\_query Java backend
+                *Автоматизация:*
+                /autopilot on — авто-отклики (match ≥ 50%%)
+                /job\\_alerts on — алерты вакансий
+                /job\\_query Java backend — запрос поиска
+                /connect\\_hh — подключить HH.ru
                 
-                *HH.ru:*
-                /connect\\_hh → /hh\\_resumes → кнопка «Откликнуться»
-                /applications — история откликов
-                🎯 Цели — кнопки для прогресса (0–100%)
-                /area 1 — регион HH (1=Москва, пусто=вся РФ)
+                /help — эта справка
                 """);
     }
 
@@ -704,16 +689,11 @@ public class CommandHandler {
     private String normalizeInput(String text) {
         if (text.equals(TelegramKeyboards.BTN_GOALS)) return "/goals";
         if (text.equals(TelegramKeyboards.BTN_JOBS)) return "/jobs";
+        if (text.equals(TelegramKeyboards.BTN_PROFILE)) return "/profile";
+        if (text.equals(TelegramKeyboards.BTN_APPLICATIONS)) return "/applications";
+        if (text.equals(TelegramKeyboards.BTN_SETUP_PROFILE)) return "/setup_profile";
         if (text.equals(TelegramKeyboards.BTN_CONNECT_HH)) return "/connect_hh";
         if (text.equals(TelegramKeyboards.BTN_RESUMES) || isResumeNav(text)) return "/hh_resumes";
-        if (text.equals(TelegramKeyboards.BTN_HELP)) return "/help";
-        if (text.equals(TelegramKeyboards.BTN_PROFILE)) return "/profile";
-        if (text.equals(TelegramKeyboards.BTN_NEXT_STEP)) return "/next_step";
-        if (text.equals(TelegramKeyboards.BTN_CHECKIN)) return "/checkin";
-        if (text.equals(TelegramKeyboards.BTN_LEARNING)) return "/learning";
-        if (text.equals(TelegramKeyboards.BTN_SETUP_PROFILE)) return "/setup_profile";
-        if (text.equals(TelegramKeyboards.BTN_APPLICATIONS)) return "/applications";
-        if (text.equals(TelegramKeyboards.BTN_INTERVIEW)) return "/interview";
         if (text.equals("◀️ Главное меню")) return "/main_menu";
 
         if (!text.startsWith("/")) {
@@ -739,17 +719,12 @@ public class CommandHandler {
     private boolean isMenuButton(String text) {
         return text.equals(TelegramKeyboards.BTN_GOALS)
                 || text.equals(TelegramKeyboards.BTN_JOBS)
+                || text.equals(TelegramKeyboards.BTN_PROFILE)
+                || text.equals(TelegramKeyboards.BTN_APPLICATIONS)
+                || text.equals(TelegramKeyboards.BTN_SETUP_PROFILE)
                 || text.equals(TelegramKeyboards.BTN_CONNECT_HH)
                 || text.equals(TelegramKeyboards.BTN_RESUMES)
                 || isResumeNav(text)
-                || text.equals(TelegramKeyboards.BTN_HELP)
-                || text.equals(TelegramKeyboards.BTN_PROFILE)
-                || text.equals(TelegramKeyboards.BTN_NEXT_STEP)
-                || text.equals(TelegramKeyboards.BTN_CHECKIN)
-                || text.equals(TelegramKeyboards.BTN_LEARNING)
-                || text.equals(TelegramKeyboards.BTN_SETUP_PROFILE)
-                || text.equals(TelegramKeyboards.BTN_APPLICATIONS)
-                || text.equals(TelegramKeyboards.BTN_INTERVIEW)
                 || text.equals("◀️ Главное меню");
     }
 

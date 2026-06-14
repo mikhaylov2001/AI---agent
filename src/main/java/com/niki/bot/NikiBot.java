@@ -49,20 +49,14 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
         try {
             execute(new SetMyCommands(List.of(
                     new BotCommand("start", "Начать / меню"),
-                    new BotCommand("next_step", "Следующий шаг"),
-                    new BotCommand("checkin", "Чек-ин состояния"),
                     new BotCommand("goals", "Мои цели"),
-                    new BotCommand("progress", "Прогресс цели"),
                     new BotCommand("profile", "Мой профиль"),
-                    new BotCommand("memory", "Что помню"),
-                    new BotCommand("setup_profile", "Настроить профиль"),
-                    new BotCommand("jobs", "Java вакансии"),
+                    new BotCommand("jobs", "Вакансии HH"),
                     new BotCommand("applications", "Мои отклики"),
-                    new BotCommand("interview", "Подготовка к собесу"),
-                    new BotCommand("learning", "Помощь с учёбой"),
+                    new BotCommand("setup_profile", "Настроить профиль"),
                     new BotCommand("connect_hh", "Подключить HH.ru"),
-                    new BotCommand("autopilot", "Автопилот on/off"),
-                    new BotCommand("help", "Навигация")
+                    new BotCommand("autopilot", "Авто-отклики on/off"),
+                    new BotCommand("help", "Справка")
             ), new BotCommandScopeDefault(), null));
         } catch (TelegramApiException e) {
             log.warn("Не удалось зарегистрировать команды меню: {}", e.getMessage());
@@ -139,10 +133,8 @@ public class NikiBot extends TelegramLongPollingBot implements NikiMessageSender
         String t = text.trim();
         return !t.equals(TelegramKeyboards.BTN_PROFILE)
                 && !t.equals(TelegramKeyboards.BTN_GOALS)
-                && !t.equals(TelegramKeyboards.BTN_HELP)
                 && !t.equals(TelegramKeyboards.BTN_JOBS)
                 && !t.equals(TelegramKeyboards.BTN_APPLICATIONS)
-                && !t.equals(TelegramKeyboards.BTN_CONNECT_HH)
                 && !t.startsWith("/");
     }
 

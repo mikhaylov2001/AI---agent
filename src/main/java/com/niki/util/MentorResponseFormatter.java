@@ -66,6 +66,10 @@ public final class MentorResponseFormatter {
                 || lower.startsWith("⚠️");
     }
 
+    public static String format(String raw) {
+        return format(raw, ChatIntent.DEFAULT);
+    }
+
     public static String format(String raw, ChatIntent intent) {
         if (raw == null || raw.isBlank()) {
             return raw;
@@ -76,8 +80,12 @@ public final class MentorResponseFormatter {
 
         String text = stripFluff(normalizeWhitespace(raw.trim()));
 
-        if (intent == ChatIntent.NEXT_STEP) {
-            return stripFakeTimers(formatMinimal(text));
+        if (intent == ChatIntent.DEFAULT) {
+            List<Block> blocks = parseBlocks(text);
+            if (!blocks.isEmpty() && hasValidContent(blocks)) {
+                return stripFakeTimers(renderBlocks(blocks, intent));
+            }
+            return stripFakeTimers(sanitizePlain(text));
         }
 
         List<Block> blocks = parseBlocks(text);
@@ -300,7 +308,7 @@ public final class MentorResponseFormatter {
     }
 
     private static boolean shouldSkip(Block block, ChatIntent intent) {
-        return intent == ChatIntent.CHECK_IN && "Контекст".equals(block.title());
+        return false;
     }
 
     private static String formatMinimal(String text) {
@@ -340,9 +348,6 @@ public final class MentorResponseFormatter {
         }
         String clean = sanitizePlain(text);
         return switch (intent) {
-            case CHECK_IN -> "📊 *Чек-ин*\nЭнергия 1–10? Что мешает?\n\n▶️ *Сейчас*\n" + firstLine(clean);
-            case NEXT_STEP -> "▶️ *Сейчас*\n" + firstLine(clean);
-            case MEMORY -> "💡 *Запомнил*\n" + clean;
             default -> clean.length() > 200
                     ? "▶️ *Сейчас*\n" + firstLine(clean)
                     : clean;

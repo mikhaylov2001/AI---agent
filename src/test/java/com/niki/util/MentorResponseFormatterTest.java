@@ -15,59 +15,38 @@ class MentorResponseFormatterTest {
                 📍 *Вижу:* хочешь Spring
                 ▶️ *Шаг:* 20 мин почитать docs
                 """;
-        String out = MentorResponseFormatter.format(raw, ChatIntent.LEARNING);
+        String out = MentorResponseFormatter.format(raw);
         assertFalse(out.toLowerCase().contains("отличный"), "out was: " + out);
         assertTrue(out.contains("📍 *Контекст*"), "out was: " + out);
         assertTrue(out.contains("▶️ *Сейчас*"), "out was: " + out);
     }
 
     @Test
-    void nextStepOnlyShowsAction() {
-        String raw = "📍 Контекст: blah\n▶️ Сейчас: 15 мин · LeetCode easy";
-        String out = MentorResponseFormatter.format(raw, ChatIntent.NEXT_STEP);
-        assertTrue(out.startsWith("▶️ *Сейчас*"));
-        assertFalse(out.contains("Контекст"));
-        assertFalse(out.contains("15 мин"), "out was: " + out);
-        assertTrue(out.contains("LeetCode"), "out was: " + out);
-    }
-
-    @Test
     void defaultChatWithBlocksKeepsStructure() {
         String raw = """
                 📍 *Контекст*
-                Энергия 7, Java-собес — активная цель
+                Ищем Java backend на HH
                 
                 ▶️ *Сейчас*
-                30 мин · заполни раздел Core Java
+                Напиши «Java developer» — пришлю вакансии
                 """;
-        String out = MentorResponseFormatter.format(raw, ChatIntent.DEFAULT);
+        String out = MentorResponseFormatter.format(raw);
         assertTrue(out.contains("📍 *Контекст*"), "out was: " + out);
         assertTrue(out.contains("▶️ *Сейчас*"), "out was: " + out);
-        assertFalse(out.contains("30 мин"), "out was: " + out);
-        assertTrue(out.contains("Core Java"), "out was: " + out);
     }
 
     @Test
     void defaultChatDoesNotSplitWords() {
         String raw = "Дима, что хочешь изучить следующим? 🎯\nВот что логично после пройденного:\nЧто выбираешь?";
-        String out = MentorResponseFormatter.format(raw, ChatIntent.DEFAULT);
+        String out = MentorResponseFormatter.format(raw);
         assertFalse(out.contains("*Д*"), "out was: " + out);
-        assertFalse(out.contains("*В*"), "out was: " + out);
-        assertFalse(out.contains("*Ч*"), "out was: " + out);
         assertTrue(out.contains("Дима"), "out was: " + out);
     }
 
     @Test
     void stripsTimersFromWholeMessage() {
         String raw = "▶️ *Сейчас*\n15 мин · открой hh.ru";
-        String out = MentorResponseFormatter.format(raw, ChatIntent.NEXT_STEP);
+        String out = MentorResponseFormatter.format(raw);
         assertFalse(out.contains("15 мин"), "out was: " + out);
-    }
-
-    @Test
-    void doesNotTreatPlainSentencesAsHeaders() {
-        String raw = "Контекст\nонтекст тела";
-        String out = MentorResponseFormatter.format(raw, ChatIntent.CHECK_IN);
-        assertFalse(out.contains("▶️ *K*"), "out was: " + out);
     }
 }

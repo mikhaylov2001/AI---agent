@@ -33,7 +33,6 @@ class MentorProfileServiceTest {
                 .blockers(MentorProfileService.PLACEHOLDER)
                 .procrastination(MentorProfileService.PLACEHOLDER)
                 .focusRestore("прогулки")
-                .learningNow(MentorProfileService.PLACEHOLDER)
                 .remember(MentorProfileService.PLACEHOLDER)
                 .build();
         MentorProfileService service = new MentorProfileService(null);

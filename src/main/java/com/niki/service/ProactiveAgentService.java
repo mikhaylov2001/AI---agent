@@ -1,7 +1,6 @@
 package com.niki.service;
 
 import com.niki.bot.TelegramKeyboards;
-import com.niki.model.Goal;
 import com.niki.model.JobApplication.ApplicationStatus;
 import com.niki.model.User;
 import com.niki.repository.UserRepository;
@@ -25,12 +24,13 @@ import java.util.stream.Collectors;
 public class ProactiveAgentService {
 
     private static final int MAX_SEEN_VACANCIES = 200;
+    private static final int MAX_AUTO_APPLY_PER_RUN = 2;
 
     private final UserRepository userRepository;
-    private final GoalService goalService;
-    private final LlmService llmService;
     private final HhService hhService;
     private final JobApplicationService jobApplicationService;
+    private final VacancyApplyOrchestrator vacancyApplyOrchestrator;
+    private final HhOAuthService hhOAuthService;
 
     @Value("${telegram.owner.id:0}")
     private long ownerTelegramId;
@@ -39,37 +39,6 @@ public class ProactiveAgentService {
 
     public void setMessageSender(NikiMessageSender sender) {
         this.messageSender = sender;
-    }
-
-    @Scheduled(cron = "${niki.morning-cron}")
-    public void morningBrief() {
-        runForProactiveUsers(user -> {
-            List<Goal> goals = goalService.getActiveGoals(user.getTelegramId());
-            String goalsHint = goals.isEmpty()
-                    ? "целей пока нет — предложи одну маленькую цель на сегодня"
-                    : "главная цель: " + goals.get(0).getTitle();
-            String text = llmService.proactiveBrief(user, goals,
-                    "Коротко. " + goalsHint + ". Один шаг на сегодня.");
-            send(user.getTelegramId(), "☀️ *Утро*\n\n" + text);
-        });
-    }
-
-    @Scheduled(cron = "${niki.midday-cron}")
-    public void middayCheckIn() {
-        runForProactiveUsers(user -> {
-            String text = llmService.proactiveBrief(user, goalService.getActiveGoals(user.getTelegramId()),
-                    "Чек-ин: спроси энергию 1-10, один шаг до вечера.");
-            send(user.getTelegramId(), "📊 *Чек-ин*\nЭнергия 1–10? Что мешает?\n\n" + text);
-        });
-    }
-
-    @Scheduled(cron = "${niki.evening-cron}")
-    public void eveningRecap() {
-        runForProactiveUsers(user -> {
-            String text = llmService.proactiveBrief(user, goalService.getActiveGoals(user.getTelegramId()),
-                    "Вечер: что сделано? один шаг на завтра.");
-            send(user.getTelegramId(), "🌙 *Вечер*\n\n" + text);
-        });
     }
 
     @Scheduled(cron = "${niki.job-alert-cron}")
@@ -82,18 +51,6 @@ public class ProactiveAgentService {
     public Map<String, Object> runDueTasks() {
         int hour = ZonedDateTime.now(ZoneOffset.UTC).getHour();
         Map<String, Object> ran = new LinkedHashMap<>();
-        if (hour == 5) {
-            morningBrief();
-            ran.put("morning", true);
-        }
-        if (hour == 11) {
-            middayCheckIn();
-            ran.put("midday", true);
-        }
-        if (hour == 18) {
-            eveningRecap();
-            ran.put("evening", true);
-        }
         if (hour == 7 || hour == 15) {
             runJobAlertsInternal();
             ran.put("jobAlerts", true);
@@ -139,21 +96,60 @@ public class ProactiveAgentService {
         }
 
         StringBuilder msg = new StringBuilder("💼 *Новые вакансии* (").append(search.query()).append("):\n\n");
+        List<HhService.VacancyDto> manualApply = new ArrayList<>();
+        int autoApplied = 0;
+
         for (int i = 0; i < fresh.size(); i++) {
             HhService.VacancyDto v = fresh.get(i);
+            seen.add(v.id());
+
+            if (autoApplied < MAX_AUTO_APPLY_PER_RUN && isAutoApplyOn(user)) {
+                Optional<VacancyApplyOrchestrator.ApplyResult> applied =
+                        vacancyApplyOrchestrator.tryAutoApply(user, v);
+                if (applied.isPresent() && applied.get().applied()) {
+                    autoApplied++;
+                    msg.append(String.format("%d. ✅ *%s* — авто-отклик (%d%%)\n🏢 %s\n🔗 %s\n\n",
+                            i + 1, v.title(), applied.get().matchScore(), v.company(), v.url()));
+                    continue;
+                }
+            }
+
             msg.append(String.format("%d. *%s*\n🏢 %s | 💰 %s\n🔗 %s\n\n",
                     i + 1, v.title(), v.company(), v.salary(), v.url()));
-            seen.add(v.id());
             jobApplicationService.upsert(user, v, ApplicationStatus.SEEN);
+            manualApply.add(v);
         }
-        msg.append("_Кнопки под сообщением — откликнуться в 1 клик_");
+
+        if (autoApplied > 0) {
+            msg.append("_Авто-откликов: ").append(autoApplied).append("_\n");
+        }
+        if (!manualApply.isEmpty()) {
+            msg.append("_Остальные — кнопки ниже или /applications_");
+        } else if (autoApplied > 0) {
+            msg.append("_Смотри статус в 📋 Отклики_");
+        } else if (isAutoApplyOn(user) && !VacancyApplyOrchestrator.isReadyForApply(user, hhOAuthService)) {
+            sendSetupHintIfNeeded(user);
+        }
 
         user.setLastNotifiedVacancies(capSeenIds(seen));
         user.setLastJobAlertAt(LocalDateTime.now());
         userRepository.save(user);
 
-        messageSender.sendMessageWithInline(user.getTelegramId(), msg.toString(),
-                TelegramKeyboards.vacancyActions(fresh));
+        if (!manualApply.isEmpty()) {
+            messageSender.sendMessageWithInline(user.getTelegramId(), msg.toString(),
+                    TelegramKeyboards.vacancyActions(manualApply));
+        } else {
+            messageSender.sendMessage(user.getTelegramId(), msg.toString());
+        }
+    }
+
+    private void sendSetupHintIfNeeded(User user) {
+        if (!hhOAuthService.isConnected(user)) {
+            send(user.getTelegramId(),
+                    "⚠️ Для авто-откликов подключи HH: /connect\\_hh и выбери резюме в 🧠 Профиль.");
+        } else if (!StringUtils.hasText(user.getHhResumeId())) {
+            send(user.getTelegramId(), "⚠️ Выбери резюме: 🧠 Профиль → 📄 Резюме");
+        }
     }
 
     @Transactional
@@ -161,9 +157,18 @@ public class ProactiveAgentService {
         user.setProactiveEnabled(enabled);
         user.setOnboardingDone(true);
         userRepository.save(user);
+        if (enabled) {
+            user.setJobAlertsEnabled(true);
+            userRepository.save(user);
+        }
         return enabled
-                ? "✅ *Автопилот включён*\n\nЯ буду писать сам: утро 8:00, день 14:00, вечер 21:00 (MSK).\nНа Render Free используй /internal/cron + UptimeRobot."
-                : "⏸ Автопилот выключен. Пиши сам, когда нужен.";
+                ? """
+                ✅ *Авто-отклики включены*
+                
+                Буду искать вакансии 2 раза в день и откликаться сам (match ≥ 50%%), если подключён HH и выбрано резюме.
+                Запрос: `%s`
+                """.formatted(jobQuery(user)).trim()
+                : "⏸ Авто-отклики выключены. Алерты вакансий не трогал — /job\\_alerts off";
     }
 
     @Transactional
@@ -186,62 +191,25 @@ public class ProactiveAgentService {
 
     public String autopilotStatus(User user) {
         return String.format("""
-                ⚙️ *Автопилот*
+                ⚙️ *Автоматизация*
                 
-                Проактивные сообщения: %s
+                Авто-отклики (match ≥ 50%%): %s
                 Алерты вакансий: %s
-                Запрос вакансий: `%s`
+                Запрос: `%s`
+                HH: %s · Резюме: %s
                 
-                /autopilot on|off
-                /job_alerts on|off
+                /autopilot on|off — авто-отклики
+                /job_alerts on|off — только алерты
                 /job_query Java backend
                 """,
-                isProactiveOn(user) ? "✅ вкл" : "❌ выкл",
+                isAutoApplyOn(user) ? "✅ вкл" : "❌ выкл",
                 isJobAlertsOn(user) ? "✅ вкл" : "❌ выкл",
-                jobQuery(user));
+                jobQuery(user),
+                hhOAuthService.isConnected(user) ? "✅" : "❌ /connect_hh",
+                StringUtils.hasText(user.getHhResumeId()) ? "✅" : "❌ в профиле");
     }
 
-    private void runForProactiveUsers(java.util.function.Consumer<User> action) {
-        if (messageSender == null) {
-            return;
-        }
-        log.info("Проактивный цикл...");
-        for (User user : userRepository.findByProactiveEnabledTrue()) {
-            if (!eligibleForProactive(user)) {
-                continue;
-            }
-            try {
-                action.accept(user);
-                sleepBetweenUsers();
-            } catch (Exception e) {
-                log.error("Proactive для {}: {}", user.getTelegramId(), e.getMessage());
-            }
-        }
-    }
-
-    private boolean eligibleForProactive(User user) {
-        if (!isProactiveOn(user)) {
-            return false;
-        }
-        if (ownerTelegramId > 0) {
-            return user.getTelegramId().equals(ownerTelegramId);
-        }
-        return true;
-    }
-
-    private static void sleepBetweenUsers() {
-        try {
-            Thread.sleep(2500);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
-    }
-
-    private void send(Long chatId, String text) {
-        messageSender.sendMessage(chatId, text);
-    }
-
-    static boolean isProactiveOn(User user) {
+    static boolean isAutoApplyOn(User user) {
         return Boolean.TRUE.equals(user.getProactiveEnabled());
     }
 
@@ -253,6 +221,10 @@ public class ProactiveAgentService {
         return StringUtils.hasText(user.getJobSearchQuery())
                 ? user.getJobSearchQuery()
                 : "Java backend";
+    }
+
+    private void send(Long chatId, String text) {
+        messageSender.sendMessage(chatId, text);
     }
 
     private static Set<String> parseSeenIds(String raw) {

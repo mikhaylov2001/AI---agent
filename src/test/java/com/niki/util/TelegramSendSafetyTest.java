@@ -1,6 +1,5 @@
 package com.niki.util;
 
-import com.niki.service.MentorProfileService;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -10,15 +9,15 @@ class TelegramSendSafetyTest {
     @Test
     void startMessageHtmlWithinTelegramLimit() {
         String welcome = """
-                Привет, Дмитрий! 👋 Я *Ники* — твой наставник и второй мозг.
+                Привет, Дмитрий! 👋 Я *Ники* — карьерный ассистент.
 
-                *Главная цель:* Java backend разработчик.
+                *Что умею:*
+                🎯 цели · 💼 вакансии HH · 📋 отклики · 🧠 профиль
+                _Авто-отклики — если подключишь HH и выберешь резюме_
 
-                👇 *Навигация* — кнопки внизу:
-                📋 След. шаг · 📊 Чек-ин · 🎯 Цели · 🧠 Профиль
-                💼 Вакансии · 📋 Отклики · 🎤 Собес · 📚 Учёба
-
-                _Включить автопилот и алерты — кнопки ниже_
+                👇 *Кнопки:*
+                🎯 Мои цели · 🧠 Профиль
+                💼 Вакансии · 📋 Отклики
 
                 ⚠️ Профиль не заполнен — «📝 Настроить профиль» (4 шага, ~2 мин).""";
         String html = TelegramHtml.markdownToHtml(welcome);
@@ -30,19 +29,17 @@ class TelegramSendSafetyTest {
 
     @Test
     void profileDisplayHtmlWithinTelegramLimit() {
-        MentorProfileService service = new MentorProfileService(null);
         String profile = """
                 🧠 *Твой профиль*
 
                 🎯 *Главная цель*
-                Устроиться Java-разработчиком на сильную/высокооплачиваемую работу
+                Устроиться Java-разработчиком
 
                 📌 *Цели*
-                1. Сдать экзамен по вождению (теория + практика)
-                2. Устроиться Java-разработчиком (собесы, резюме, портfолио, LeetCode)
+                1. Устроиться Java-разработчиком (собесы, резюме, отклики на HH)
 
-                📚 *Учусь сейчас*
-                Java backend, Spring Boot, проекты svoi-mastera / niki-bot / FinTracker
+                💡 *Важно помнить*
+                Не любит воду и пустую мотивацию
 
                 _Обновить:_ «📝 Настроить профиль»""";
         String html = TelegramHtml.markdownToHtml(profile);

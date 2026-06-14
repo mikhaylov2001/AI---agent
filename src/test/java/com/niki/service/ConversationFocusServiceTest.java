@@ -9,21 +9,13 @@ class ConversationFocusServiceTest {
     private final ConversationFocusService service = new ConversationFocusService(null, null, null);
 
     @Test
-    void shortReplyJavaAfterChoiceStaysOnJava() {
-        String assistant = "📍 Контекст\nЭнергия 7. Что учим: права или Java-собес?";
-        assertEquals("java_career", service.detectFromReply("джава", assistant));
-        assertEquals("java_career", service.detectFromReply("java", assistant));
+    void jobMessageSetsJobsTopic() {
+        assertEquals("jobs", service.detectTopicFromText("найди вакансии java backend"));
     }
 
     @Test
-    void shortReplyRightsAfterChoice() {
-        String assistant = "Что учим: права или Java-собес?";
-        assertEquals("driving", service.detectFromReply("права", assistant));
-    }
-
-    @Test
-    void explicitJavaMessageSetsCareerTopic() {
-        assertEquals("java_career", service.detectTopicFromText("хочу разобрать core java"));
+    void goalMessageSetsGoalsTopic() {
+        assertEquals("goals", service.detectTopicFromText("обнови прогресс цели"));
     }
 
     @Test
@@ -32,11 +24,11 @@ class ConversationFocusServiceTest {
     }
 
     @Test
-    void promptSectionForbidsTopicMixing() {
+    void promptSectionForJobs() {
         ConversationFocusService.ResolvedFocus focus =
-                new ConversationFocusService.ResolvedFocus("java_career", "Java / карьера", ChatIntent.LEARNING);
+                new ConversationFocusService.ResolvedFocus("jobs", "Вакансии / HH", ChatIntent.DEFAULT);
         String section = service.buildPromptSection(focus);
         assertTrue(section.contains("ТЕКУЩАЯ ТЕМА"));
-        assertTrue(section.contains("Не переключайся"));
+        assertTrue(section.contains("Вакансии"));
     }
 }
