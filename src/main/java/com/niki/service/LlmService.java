@@ -18,10 +18,14 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 import java.time.Duration;
 import java.util.*;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 @Slf4j
 public class LlmService {
+
+    private static final Pattern API_ERROR_MESSAGE = Pattern.compile("\"message\"\\s*:\\s*\"([^\"]+)\"");
 
     private final WebClient llmWebClient;
     private final WebClient anthropicWebClient;
@@ -54,7 +58,7 @@ public class LlmService {
     @Value("${llm.anthropic.key:}")
     private String anthropicKey;
 
-    @Value("${llm.anthropic.model:claude-opus-4-8}")
+    @Value("${llm.anthropic.model:claude-sonnet-4-6}")
     private String anthropicModel;
 
     @Value("${llm.anthropic.fast-model:claude-sonnet-4-6}")
@@ -497,12 +501,10 @@ public class LlmService {
             Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
             return cleanResponse((String) message.get("content"));
         } catch (WebClientResponseException e) {
-            if (e.getStatusCode().value() == 404 && modelOverride == null
-                    && tier == LlmTier.SMART && isClaude()
-                    && anthropicModel.toLowerCase(Locale.ROOT).contains("opus")
-                    && !anthropicFastModel.equals(anthropicModel)) {
-                log.warn("Opus недоступен (404), fallback на {}", anthropicFastModel);
-                return callLlmWithRetry(messages, tokens, temp, tier, retriesLeft, anthropicFastModel);
+            if (shouldRetryWithFallbackModel(e, modelName, tier) && modelOverride == null) {
+                String fallback = anthropicFastModel;
+                log.warn("Claude model {} failed ({}), fallback на {}", modelName, e.getStatusCode().value(), fallback);
+                return callLlmWithRetry(messages, tokens, temp, tier, retriesLeft, fallback);
             }
             if (e.getStatusCode().value() == 429 && retriesLeft > 0) {
                 log.warn("{} 429 — retry через 2 сек", provider);
@@ -525,6 +527,27 @@ public class LlmService {
         return tier == LlmTier.FAST ? fastModelName() : smartModelName();
     }
 
+    private boolean shouldRetryWithFallbackModel(WebClientResponseException e, String modelName, LlmTier tier) {
+        if (!isClaude() || tier != LlmTier.SMART || modelName.equals(anthropicFastModel)) {
+            return false;
+        }
+        int status = e.getStatusCode().value();
+        if (status == 404) {
+            return true;
+        }
+        if (status != 400) {
+            return false;
+        }
+        String body = e.getResponseBodyAsString().toLowerCase(Locale.ROOT);
+        if (body.contains("credit balance") || body.contains("non-empty") || body.contains("non-whitespace")) {
+            return false;
+        }
+        return body.contains("model")
+                || body.contains("not_found")
+                || body.contains("does not exist")
+                || body.contains("not available");
+    }
+
     @SuppressWarnings("unchecked")
     private String callAnthropic(List<Map<String, String>> messages, int tokens, double temp, String modelName) {
         String system = messages.stream()
@@ -538,9 +561,15 @@ public class LlmService {
                 chatMessages.add(Map.of("role", m.get("role"), "content", m.get("content")));
             }
         }
+        chatMessages = sanitizeAnthropicMessages(chatMessages);
+        if (chatMessages.isEmpty()) {
+            throw new IllegalStateException("Пустая история для Claude API");
+        }
+
+        int safeTokens = Math.max(tokens, 64);
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("model", modelName);
-        body.put("max_tokens", tokens);
+        body.put("max_tokens", safeTokens);
         body.put("system", system);
         body.put("messages", chatMessages);
         body.put("temperature", temp);
@@ -595,19 +624,75 @@ public class LlmService {
 
     private String mapLlmError(WebClientResponseException e, String modelName) {
         int status = e.getStatusCode().value();
+        String apiMessage = extractApiErrorMessage(e.getResponseBodyAsString());
         String keyHint = switch (provider.toLowerCase(Locale.ROOT)) {
             case "claude", "anthropic" -> "CLAUDE_API_KEY (console.anthropic.com)";
             case "groq" -> "GROQ_API_KEY (console.groq.com → API Keys)";
             case "perplexity" -> "PERPLEXITY_API_KEY (perplexity.ai → Settings → API)";
             default -> "LLM API key";
         };
+        if (status == 400 && apiMessage != null) {
+            if (apiMessage.toLowerCase(Locale.ROOT).contains("credit balance")) {
+                return "⚠️ На Claude закончились кредиты. Пополни баланс на console.anthropic.com";
+            }
+            if (apiMessage.toLowerCase(Locale.ROOT).contains("non-empty")
+                    || apiMessage.toLowerCase(Locale.ROOT).contains("non-whitespace")) {
+                return "⚠️ Ошибка истории диалога. Напиши /сброс и попробуй снова.";
+            }
+            return "⚠️ Claude: " + shorten(apiMessage, 200);
+        }
         return switch (status) {
             case 401 -> "Неверный ключ. Проверь " + keyHint + ".";
             case 403 -> "Доступ запрещён (403). Проверь лимиты провайдера.";
             case 429 -> "⚠️ Лимит запросов. Подожди 30 сек и нажми снова.";
             case 404 -> "Модель %s не найдена. Проверь CLAUDE_MODEL / LLM_MODEL.".formatted(modelName);
-            default -> provider + " вернул ошибку %d. Смотри логи сервера.".formatted(status);
+            default -> provider + " вернул ошибку " + status
+                    + (apiMessage != null ? ": " + shorten(apiMessage, 120) : ". Смотри логи сервера.");
         };
+    }
+
+    private static List<Map<String, String>> sanitizeAnthropicMessages(List<Map<String, String>> raw) {
+        List<Map<String, String>> result = new ArrayList<>();
+        for (Map<String, String> m : raw) {
+            String role = m.get("role");
+            String content = m.get("content");
+            if (!StringUtils.hasText(content) || content.trim().isEmpty()) {
+                continue;
+            }
+            if (!"user".equals(role) && !"assistant".equals(role)) {
+                continue;
+            }
+            if (!result.isEmpty() && result.get(result.size() - 1).get("role").equals(role)) {
+                Map<String, String> prev = result.get(result.size() - 1);
+                result.set(result.size() - 1, Map.of(
+                        "role", role,
+                        "content", prev.get("content") + "\n\n" + content.trim()));
+            } else {
+                result.add(Map.of("role", role, "content", content.trim()));
+            }
+        }
+        while (!result.isEmpty() && "assistant".equals(result.get(0).get("role"))) {
+            result.remove(0);
+        }
+        return result;
+    }
+
+    private static String extractApiErrorMessage(String body) {
+        if (!StringUtils.hasText(body)) {
+            return null;
+        }
+        Matcher m = API_ERROR_MESSAGE.matcher(body);
+        if (m.find()) {
+            return m.group(1).replace("\\n", "\n");
+        }
+        return null;
+    }
+
+    private static String shorten(String text, int max) {
+        if (text == null || text.length() <= max) {
+            return text;
+        }
+        return text.substring(0, max - 1) + "…";
     }
 
     public String summarizeMaterialForProfile(String rawText, String fileName, String caption) {

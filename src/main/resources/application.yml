@@ -45,7 +45,7 @@ llm:
     proactive-max-tokens: ${LLM_PROACTIVE_MAX_TOKENS:220}
   anthropic:
     key: ${CLAUDE_API_KEY:}
-    model: ${CLAUDE_MODEL:claude-opus-4-8}
+    model: ${CLAUDE_MODEL:claude-sonnet-4-6}
     fast-model: ${CLAUDE_FAST_MODEL:claude-sonnet-4-6}
   vision:
     groq-model: ${LLM_VISION_GROQ_MODEL:llama-3.2-11b-vision-preview}
